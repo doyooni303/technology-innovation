@@ -1,0 +1,26 @@
+{
+  "graph_info": {
+    "total_papers": 215,
+    "total_edges": 9245,
+    "average_edges_per_paper": 43.0,
+    "graph_density": 0.20093457943925233
+  },
+  "similarity_distribution": {
+    "mean": 0.9985139966011047,
+    "median": 0.9986698627471924,
+    "std": 0.0006596363964490592,
+    "min": 0.993824303150177,
+    "max": 0.9998307824134827,
+    "percentiles": {
+      "80th": 0.9990209341049194,
+      "90th": 0.9991694688796997,
+      "95th": 0.9992780685424805
+    }
+  },
+  "edge_distribution": {
+    "mean_edges": 43.0,
+    "median_edges": 43.0,
+    "min_edges": 43,
+    "max_edges": 43
+  }
+}
