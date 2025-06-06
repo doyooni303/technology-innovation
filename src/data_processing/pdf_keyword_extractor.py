@@ -544,10 +544,10 @@ class PDFKeywordExtractor:
 
 def main():
     """메인 실행 함수"""
-    from src import PROCESSED_DIR
+    from src import RAW_EXTRACTIONS_DIR
 
     # 기존 메타데이터 로드
-    metadata_file = PROCESSED_DIR / "papers_metadata.json"
+    metadata_file = RAW_EXTRACTIONS_DIR / "papers_metadata.json"
 
     if not metadata_file.exists():
         print("❌ Papers metadata not found. Run bibtex_parser.py first.")
@@ -565,7 +565,7 @@ def main():
     updated_papers = extractor.process_all_pdfs(None, papers_metadata)
 
     # 업데이트된 메타데이터 저장
-    extractor.save_updated_metadata(updated_papers, PROCESSED_DIR)
+    extractor.save_updated_metadata(updated_papers, RAW_EXTRACTIONS_DIR)
 
     # 통계 출력
     papers_with_keywords = sum(

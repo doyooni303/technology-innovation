@@ -97,7 +97,7 @@ def run_complete_data_processing():
     print("🚀 Starting integrated data processing pipeline...")
 
     # 프로젝트 경로 설정
-    from src import BIBS_DIR, PDFS_DIR, PROCESSED_DIR
+    from src import BIBS_DIR, PDFS_DIR, RAW_EXTRACTIONS_DIR
 
     # Step 1: Bibtex 파싱
     print("\n" + "=" * 60)
@@ -108,7 +108,7 @@ def run_complete_data_processing():
     papers_bibtex = parser.parse_all_bibtex_files()
 
     # Bibtex 기반 중간 결과 저장
-    parser.save_metadata(PROCESSED_DIR / "step1_bibtex_metadata.json")
+    parser.save_metadata(RAW_EXTRACTIONS_DIR / "step1_bibtex_metadata.json")
 
     # Bibtex 기반 통계
     stats_bibtex = parser.get_statistics()
@@ -194,7 +194,7 @@ def run_complete_data_processing():
     print("=" * 60)
 
     # 최종 통합 메타데이터 저장
-    final_file = PROCESSED_DIR / "integrated_papers_metadata.json"
+    final_file = RAW_EXTRACTIONS_DIR / "integrated_papers_metadata.json"
     with open(final_file, "w", encoding="utf-8") as f:
         json.dump(integrated_papers, f, ensure_ascii=False, indent=2)
 
@@ -215,7 +215,7 @@ def run_complete_data_processing():
         df_data.append(row)
 
     df = pd.DataFrame(df_data)
-    csv_file = PROCESSED_DIR / "integrated_papers_metadata.csv"
+    csv_file = RAW_EXTRACTIONS_DIR / "integrated_papers_metadata.csv"
     df.to_csv(csv_file, index=False, encoding="utf-8")
 
     print(f"💾 Integrated metadata saved to:")
@@ -355,7 +355,7 @@ def run_complete_data_processing():
         "keyword_frequencies": dict(keyword_freq),
     }
 
-    stats_file = PROCESSED_DIR / "integrated_keyword_statistics.json"
+    stats_file = RAW_EXTRACTIONS_DIR / "integrated_keyword_statistics.json"
     with open(stats_file, "w", encoding="utf-8") as f:
         json.dump(keyword_stats, f, ensure_ascii=False, indent=2)
 

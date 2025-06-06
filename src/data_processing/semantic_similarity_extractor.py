@@ -381,10 +381,10 @@ class SemanticSimilarityExtractor:
 
 def main():
     """메인 실행 함수"""
-    from src import PROCESSED_DIR
+    from src import RAW_EXTRACTIONS_DIR
 
     # 통합 메타데이터 로드
-    metadata_file = PROCESSED_DIR / "integrated_papers_metadata.json"
+    metadata_file = RAW_EXTRACTIONS_DIR / "integrated_papers_metadata.json"
 
     if not metadata_file.exists():
         print("❌ Integrated papers metadata not found. Run main.py first.")
@@ -409,7 +409,7 @@ def main():
 
     # 결과 저장
     output_file = extractor.save_similarity_graph(
-        similarity_graph, similarity_matrix, paper_ids, texts_data, PROCESSED_DIR
+        similarity_graph, similarity_matrix, paper_ids, texts_data, RAW_EXTRACTIONS_DIR
     )
 
     print(f"✅ Semantic similarity analysis completed!")

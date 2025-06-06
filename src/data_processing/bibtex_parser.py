@@ -276,7 +276,7 @@ class BibtexParser:
 def main():
     """메인 실행 함수"""
     # 프로젝트 경로 설정
-    from src import BIBS_DIR, PDFS_DIR, PROCESSED_DIR
+    from src import BIBS_DIR, PDFS_DIR, RAW_EXTRACTIONS_DIR
 
     # BibtexParser 인스턴스 생성
     parser = BibtexParser(BIBS_DIR, PDFS_DIR)
@@ -285,8 +285,8 @@ def main():
     papers = parser.parse_all_bibtex_files()
 
     # 메타데이터 저장
-    parser.save_metadata(PROCESSED_DIR / "papers_metadata.json")
-    parser.save_metadata(PROCESSED_DIR / "papers_metadata.csv")
+    parser.save_metadata(RAW_EXTRACTIONS_DIR / "papers_metadata.json")
+    parser.save_metadata(RAW_EXTRACTIONS_DIR / "papers_metadata.csv")
 
     # 통계 정보 출력
     stats = parser.get_statistics()

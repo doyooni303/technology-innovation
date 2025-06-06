@@ -365,10 +365,10 @@ class ReferenceExtractor:
 
 def main():
     """메인 실행 함수"""
-    from src import PROCESSED_DIR
+    from src import RAW_EXTRACTIONS_DIR
 
     # 통합 메타데이터 로드
-    metadata_file = PROCESSED_DIR / "integrated_papers_metadata.json"
+    metadata_file = RAW_EXTRACTIONS_DIR / "integrated_papers_metadata.json"
 
     if not metadata_file.exists():
         print("❌ Integrated papers metadata not found. Run main.py first.")
@@ -386,7 +386,7 @@ def main():
     citation_network = extractor.build_citation_network(papers_metadata)
 
     # 결과 저장 (graph_construction 모듈과 호환되는 형태)
-    output_file = extractor.save_citation_network(citation_network, PROCESSED_DIR)
+    output_file = extractor.save_citation_network(citation_network, RAW_EXTRACTIONS_DIR)
 
     print(f"\n✅ Citation network extraction completed!")
     print(f"📁 Graph-ready output: {output_file}")

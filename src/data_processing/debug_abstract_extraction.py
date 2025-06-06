@@ -9,7 +9,7 @@ from .pdf_keyword_extractor import PDFKeywordExtractor
 
 def test_abstract_extraction(num_samples=5):
     """몇 개 샘플 PDF에서 Abstract 추출 테스트"""
-    from src import PDFS_DIR, PROCESSED_DIR
+    from src import PDFS_DIR, RAW_EXTRACTIONS_DIR
 
     # PDF 파일들 가져오기
     pdf_files = list(PDFS_DIR.glob("*.pdf"))
