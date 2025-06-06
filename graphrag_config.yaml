@@ -1,0 +1,237 @@
+# GraphRAG 설정 - 서버 로컬 모델 사용
+# 완전 무료 + 고성능 (서버 모델 활용)
+
+# ============================================================================
+# LLM 설정 - 서버 로컬 Llama 3.1 사용
+# ============================================================================
+llm:
+  provider: "huggingface_local"  # 로컬 HuggingFace 모델 사용
+  temperature: 0.1
+
+  huggingface_local:
+    # 서버에 있는 Llama 3.1 모델 직접 사용
+    model_path: "/DATA/MODELS/models--meta-llama--Llama-3.1-8B-Instruct"
+    # 대안 경로들:
+    # - "/DATA/MODELS/models--meta-llama--Meta-Llama-3.1-8B-Instruct"
+    # - "/DATA/MODELS/models--Qwen--Qwen2.5-14B-Instruct"  # 더 큰 모델
+    # - "/DATA/MODELS/models--google--gemma-2-9b-it"       # Google 모델
+    
+    # 생성 설정  
+    max_new_tokens: 2048
+    do_sample: true
+    top_p: 0.9
+    top_k: 50
+    repetition_penalty: 1.1
+    
+    # 하드웨어 최적화
+    device_map: "auto"  # GPU 자동 할당
+    torch_dtype: "bfloat16"  # 메모리 효율성
+    trust_remote_code: true
+    
+    # 배치 처리
+    batch_size: 1  # 메모리 안전
+
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+    model_name: "gpt-4o"
+    # ... OpenAI 전용 설정들
+  
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"
+    model_name: "claude-3-5-sonnet"
+    # ... Anthropic 전용 설정들
+
+  # HuggingFace API 백업 (무료 한도 있음)
+  huggingface_api:
+    model_name: "microsoft/DialoGPT-large"
+    api_key: "${HUGGINGFACE_API_KEY}"
+
+# ============================================================================
+# 임베딩 설정 - Sentence Transformers (로컬)
+# ============================================================================
+embeddings:
+  model_type: "sentence-transformers"
+  
+  sentence_transformers:
+    # 서버 성능 활용 - 고품질 다국어 모델
+    model_name: "paraphrase-multilingual-mpnet-base-v2"  # 768차원, 고품질
+    # 대안들:
+    # - "paraphrase-multilingual-MiniLM-L12-v2"  # 384차원, 빠름
+    # - "allenai/specter2_base"                  # 과학논문 특화
+    
+    device: "auto"  # GPU 사용
+    batch_size: 32  # 서버 성능 활용
+    cache_dir: "./cache/embeddings"
+
+# ============================================================================
+# 벡터 저장소 설정 - ChromaDB (고성능)
+# ============================================================================
+vector_store:
+  store_type: "faiss"  # [faiss, chroma]
+  
+  faiss:
+    persist_directory: "./data/processed/vector_store"
+    index_type: "flat"    # 정확도 우선
+    distance_metric: "cosine"
+    use_gpu: true  # GPU 사용 활성화
+    gpu_id: 0      # 사용할 GPU ID
+    gpu_memory_fraction: 0.5
+  
+  chroma:
+    persist_directory: "./data/processed/vector_store"
+    collection_name: "graphrag_embeddings"
+    distance_metric: "cosine"
+  
+  simple:
+    persist_directory: "./data/processed/vector_store"
+
+# ============================================================================
+# 서버 성능 활용 설정
+# ============================================================================
+graph_processing:
+  node_embeddings:
+    max_text_length: 512    # 서버 성능으로 긴 텍스트 처리
+    batch_size: 32          # 대용량 배치 처리
+    cache_embeddings: true
+    cache_dir: "./data/processed/embeddings_cache"
+    
+  subgraph_extraction:
+    max_nodes: 300          # 서버 성능 활용
+    max_edges: 800
+    max_hops: 3
+    initial_top_k: 25
+    similarity_threshold: 0.5
+    expansion_factor: 2.5
+    
+  context_serialization:
+    max_tokens: 8000        # Llama 3.1 컨텍스트 활용
+    format_style: "structured"
+    language: "mixed"
+    include_statistics: true
+    include_relationships: true
+
+# ============================================================================
+# GPU 최적화 설정
+# ============================================================================
+hardware:
+  # GPU 설정
+  use_gpu: true
+  gpu_memory_fraction: 0.7  # GPU 메모리의 70% 사용
+  mixed_precision: true     # bfloat16 사용
+  
+  # CPU 설정  
+  cpu_threads: 8           # 서버 CPU 활용
+  
+  # 메모리 관리
+  enable_gradient_checkpointing: true
+  enable_cpu_offload: false  # GPU가 충분하면 끄기
+
+# ============================================================================
+# 쿼리 분석 설정
+# ============================================================================
+query_analysis:
+  complexity_thresholds:
+    simple_max: 0.3
+    medium_max: 0.6
+    complex_max: 0.8
+    
+  language_detection:
+    default_language: "ko"
+    supported_languages: ["ko", "en"]
+    
+  # 서버 성능에 맞춘 타임아웃
+  timeouts:
+    simple: 20
+    medium: 45
+    complex: 120
+    exploratory: 240
+
+# ============================================================================
+# 파일 경로 설정
+# ============================================================================
+paths:
+  data_dir: "./data"
+  processed_dir: "./data/processed"
+  unified_graph: "./data/processed/graphs/unified/unified_knowledge_graph.json"
+  individual_graphs_dir: "./data/processed/graphs"
+  cache_dir: "./cache"
+  embeddings_cache: "./cache/embeddings"
+  query_cache: "./cache/queries"
+  logs_dir: "./logs"
+  
+  # 서버 모델 경로
+  models_dir: "/DATA/MODELS"
+
+# ============================================================================
+# 성능 최적화 (서버 환경)
+# ============================================================================
+performance:
+  enable_parallel: true
+  max_workers: 4           # 서버 성능 활용
+  enable_caching: true
+  cache_size_limit: "8GB"  # 서버 메모리 활용
+  batch_processing: true
+  memory_limit: "16GB"
+  
+  # 고급 최적화
+  enable_flash_attention: true   # 메모리 효율성
+  enable_model_parallelism: true # 큰 모델용
+  
+# ============================================================================
+# 로깅 설정
+# ============================================================================
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_logging:
+    enabled: true
+    log_file: "./logs/graphrag.log"
+    max_size: "50MB"  # 서버에서 큰 로그 허용
+    backup_count: 5
+  console_logging:
+    enabled: true
+    colored: true
+
+# ============================================================================
+# 개발 설정
+# ============================================================================
+development:
+  debug_mode: false
+  test_mode: false
+  sample_data_only: false
+  max_test_nodes: 200  # 서버 성능으로 큰 테스트
+  enable_profiling: true  # 성능 모니터링
+
+# ============================================================================
+# 서버 환경 설정
+# ============================================================================
+server:
+  # 모델 로딩 최적화
+  preload_models: true      # 서버 시작시 모델 미리 로딩
+  model_cache_size: 2       # 최대 2개 모델 동시 로딩
+  
+  # 메모리 관리
+  auto_cleanup: true        # 자동 메모리 정리
+  cleanup_interval: 3600    # 1시간마다 정리
+  
+  # 보안
+  restrict_model_access: true  # 지정된 모델만 접근
+
+# ============================================================================
+# 환경변수 설정 가이드
+# ============================================================================
+# .env 파일 내용:
+# HUGGINGFACE_API_KEY=your-api-key-here  # 백업용
+# CUDA_VISIBLE_DEVICES=0                 # GPU 선택 (필요시)
+# PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+#
+# 서버 요구사항:
+# - GPU: 8GB+ VRAM (Llama 3.1 8B용)
+# - RAM: 16GB+ (32GB 권장)
+# - 저장공간: 5GB+ (캐시 및 벡터저장소)
+#
+# 모델 성능 순서:
+# 1. Qwen2.5-14B-Instruct (최고 성능, 더 많은 VRAM 필요)
+# 2. Llama-3.1-8B-Instruct (추천: 성능/효율 균형)
+# 3. Gemma-2-9b-it (Google, 좋은 성능)
+# 4. Mistral-7B-Instruct (빠름, 기본 성능)

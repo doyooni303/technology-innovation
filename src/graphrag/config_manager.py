@@ -58,6 +58,14 @@ class LLMConfig:
     streaming: bool = False
     timeout: int = 60
 
+    model_path: Optional[str] = None  # 로컬 모델 경로
+    device_map: str = "auto"  # GPU 할당
+    torch_dtype: str = "bfloat16"  # 메모리 효율성
+    max_new_tokens: int = 2048  # 생성 토큰 수
+    trust_remote_code: bool = True  # HF 모델용
+    load_in_8bit: bool = False  # 양자화 옵션
+    load_in_4bit: bool = False  # 더 강한 양자화
+
 
 @dataclass
 class EmbeddingConfig:
@@ -260,6 +268,16 @@ class GraphRAGConfigManager:
         if os.getenv("GRAPHRAG_LLM_MAX_TOKENS"):
             llm_config["max_tokens"] = int(os.getenv("GRAPHRAG_LLM_MAX_TOKENS"))
 
+        if os.getenv("GRAPHRAG_LOCAL_MODEL_PATH"):
+            llm_config["model_path"] = os.getenv("GRAPHRAG_LOCAL_MODEL_PATH")
+            llm_config["provider"] = "huggingface_local"
+
+        if os.getenv("GRAPHRAG_MODEL_DEVICE_MAP"):
+            llm_config["device_map"] = os.getenv("GRAPHRAG_MODEL_DEVICE_MAP")
+
+        if os.getenv("GRAPHRAG_MODEL_DTYPE"):
+            llm_config["torch_dtype"] = os.getenv("GRAPHRAG_MODEL_DTYPE")
+
         if llm_config:
             env_config["llm"] = llm_config
 
@@ -332,20 +350,138 @@ class GraphRAGConfigManager:
         self.config.config_source = source
 
     def _dict_to_config(self, config_dict: Dict[str, Any]) -> GraphRAGConfig:
-        """딕셔너리를 GraphRAGConfig로 변환"""
+        """딕셔너리를 GraphRAGConfig로 변환 (중첩 구조 지원)"""
 
-        # 하위 설정들 생성
-        llm_config = LLMConfig(**config_dict.get("llm", {}))
-        embedding_config = EmbeddingConfig(**config_dict.get("embedding", {}))
-        graph_config = GraphConfig(**config_dict.get("graph", {}))
-        qa_config = QAConfig(**config_dict.get("qa", {}))
-        system_config = SystemConfig(**config_dict.get("system", {}))
+        # LLM 설정 처리 - 중첩 구조 평면화
+        llm_data = config_dict.get("llm", {}).copy()  # 복사본 생성
+
+        if "provider" in llm_data:
+            provider = llm_data["provider"]
+
+            # provider별 중첩 설정 평면화
+            if provider in llm_data:  # huggingface_local, openai, anthropic 등
+                logger.info(f"🔧 Processing nested config for provider: {provider}")
+
+                nested_config = llm_data[provider]
+
+                # 중첩된 설정을 상위로 병합 (기존 키 우선)
+                for key, value in nested_config.items():
+                    if key not in llm_data:  # 기존 키가 없으면 추가
+                        llm_data[key] = value
+                        logger.debug(f"   Added {key} = {value}")
+
+                # 중첩 섹션 제거
+                del llm_data[provider]
+                logger.info(f"✅ Flattened {provider} config")
+
+        # 임베딩 설정 처리 - 마찬가지로 중첩 구조 평면화
+        embedding_data = config_dict.get("embedding", {}).copy()
+        if not embedding_data:
+            embedding_data = config_dict.get(
+                "embeddings", {}
+            ).copy()  # embeddings도 지원
+
+        if "model_type" in embedding_data:
+            model_type = embedding_data["model_type"]
+
+            # model_type별 중첩 설정 평면화 (sentence_transformers, openai_embeddings 등)
+            if model_type in embedding_data:
+                logger.info(f"🔧 Processing nested embedding config for: {model_type}")
+
+                nested_config = embedding_data[model_type]
+
+                for key, value in nested_config.items():
+                    if key not in embedding_data:
+                        embedding_data[key] = value
+                        logger.debug(f"   Added embedding {key} = {value}")
+
+                del embedding_data[model_type]
+                logger.info(f"✅ Flattened {model_type} embedding config")
+
+        # 벡터 저장소 설정 처리
+        vector_store_data = config_dict.get("vector_store", {}).copy()
+
+        if "store_type" in vector_store_data:
+            store_type = vector_store_data["store_type"]
+
+            # store_type별 중첩 설정 평면화 (faiss, chroma, simple 등)
+            if store_type in vector_store_data:
+                logger.info(
+                    f"🔧 Processing nested vector store config for: {store_type}"
+                )
+
+                nested_config = vector_store_data[store_type]
+
+                for key, value in nested_config.items():
+                    if key not in vector_store_data:
+                        vector_store_data[key] = value
+                        logger.debug(f"   Added vector_store {key} = {value}")
+
+                del vector_store_data[store_type]
+                logger.info(f"✅ Flattened {store_type} vector store config")
+
+        # 기타 중첩 설정들도 처리 (graph_processing, hardware 등)
+        processed_config = config_dict.copy()
+
+        # 처리된 설정들로 교체
+        processed_config["llm"] = llm_data
+        processed_config["embedding"] = embedding_data
+        processed_config["vector_store"] = vector_store_data
+
+        # 나머지 중첩 설정들 평면화 (필요시)
+        nested_sections = [
+            "graph_processing",
+            "hardware",
+            "query_analysis",
+            "performance",
+        ]
+
+        for section in nested_sections:
+            if section in processed_config:
+                section_data = processed_config[section]
+
+                # 중첩 구조가 있으면 평면화
+                flattened = {}
+                for key, value in section_data.items():
+                    if isinstance(value, dict):
+                        # 하위 딕셔너리를 prefix와 함께 평면화
+                        for sub_key, sub_value in value.items():
+                            flattened[f"{key}_{sub_key}"] = sub_value
+                    else:
+                        flattened[key] = value
+
+                processed_config[section] = flattened
+
+        # 각 설정 클래스 생성
+        try:
+            llm_config = LLMConfig(**llm_data)
+            logger.info("✅ LLMConfig created successfully")
+        except Exception as e:
+            logger.error(f"❌ LLMConfig creation failed: {e}")
+            logger.info(f"Available LLM keys: {list(llm_data.keys())}")
+            # 기본값으로 생성
+            llm_config = LLMConfig()
+
+        try:
+            embedding_config = EmbeddingConfig(**embedding_data)
+            logger.info("✅ EmbeddingConfig created successfully")
+        except Exception as e:
+            logger.error(f"❌ EmbeddingConfig creation failed: {e}")
+            logger.info(f"Available embedding keys: {list(embedding_data.keys())}")
+            embedding_config = EmbeddingConfig()
+
+        # 나머지 설정들
+        graph_config = GraphConfig(**processed_config.get("graph", {}))
+        qa_config = QAConfig(**processed_config.get("qa", {}))
+        system_config = SystemConfig(**processed_config.get("system", {}))
 
         # 메타데이터
         meta_fields = {
-            "version": config_dict.get("version", "1.0.0"),
-            "config_source": config_dict.get("config_source", ConfigSource.DEFAULT),
-            "last_updated": config_dict.get("last_updated"),
+            "version": processed_config.get("version", "1.0.0"),
+            "config_source": processed_config.get(
+                "config_source", ConfigSource.DEFAULT
+            ),
+            "last_updated": processed_config.get("last_updated"),
         }
 
         return GraphRAGConfig(
@@ -371,6 +507,17 @@ class GraphRAGConfigManager:
 
         if self.config.llm.temperature < 0 or self.config.llm.temperature > 1:
             errors.append("LLM temperature must be between 0 and 1")
+
+        # 🆕 로컬 모델 경로 검증
+        if self.config.llm.provider == "huggingface_local":
+            if not self.config.llm.model_path:
+                errors.append(
+                    "Local model path is required for huggingface_local provider"
+                )
+            elif not Path(self.config.llm.model_path).exists():
+                warnings.append(
+                    f"Local model path not found: {self.config.llm.model_path}"
+                )
 
         # 그래프 경로 검증
         if self.config.graph.unified_graph_path:
@@ -438,7 +585,17 @@ class GraphRAGConfigManager:
 
     def get_llm_config(self) -> Dict[str, Any]:
         """LLM 설정을 LangChain 호환 형태로 반환"""
-
+        if self.config.llm.provider == "huggingface_local":
+            return {
+                "model_path": self.config.llm.model_path,
+                "device_map": self.config.llm.device_map,
+                "torch_dtype": self.config.llm.torch_dtype,
+                "max_new_tokens": self.config.llm.max_new_tokens,
+                "temperature": self.config.llm.temperature,
+                "trust_remote_code": self.config.llm.trust_remote_code,
+                "load_in_8bit": self.config.llm.load_in_8bit,
+                "load_in_4bit": self.config.llm.load_in_4bit,
+            }
         llm_config = {
             "model": self.config.llm.model_name,
             "temperature": self.config.llm.temperature,
@@ -534,10 +691,17 @@ def create_sample_config(file_path: str = "graphrag_config.yaml") -> None:
 
     sample_config = {
         "llm": {
-            "provider": "openai",
-            "model_name": "gpt-4",
+            # 🆕 로컬 모델 설정 예시 추가
+            "provider": "huggingface_local",  # 또는 "openai", "anthropic"
+            "model_path": "/DATA/MODELS/models--meta-llama--Llama-3.1-8B-Instruct",
+            "device_map": "auto",
+            "torch_dtype": "bfloat16",
             "temperature": 0.1,
-            "max_tokens": 2000,
+            "max_new_tokens": 2048,
+            # API 기반 대안 설정
+            # "provider": "openai",
+            # "model_name": "gpt-4",
+            # "api_key": "${OPENAI_API_KEY}",
         },
         "embedding": {"model_name": "auto", "device": "auto", "batch_size": 32},
         "graph": {

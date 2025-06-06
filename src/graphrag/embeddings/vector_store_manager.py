@@ -28,17 +28,27 @@ try:
     from chromadb.config import Settings
 
     _chromadb_available = True
-except ImportError:
+except (ImportError, RuntimeError) as e:
     _chromadb_available = False
-    warnings.warn("ChromaDB not available. Install with: pip install chromadb")
+    if "sqlite3" in str(e):
+        warnings.warn(
+            "ChromaDB not available due to SQLite compatibility. Using FAISS instead."
+        )
+    else:
+        warnings.warn("ChromaDB not available. Install with: pip install chromadb")
 
 try:
     import faiss
 
     _faiss_available = True
-except ImportError:
+except (ImportError, AttributeError) as e:
     _faiss_available = False
-    warnings.warn("FAISS not available. Install with: pip install faiss-cpu")
+    if "numpy" in str(e).lower() or "_array_api" in str(e):
+        warnings.warn(
+            "FAISS not available due to NumPy compatibility. Try: pip install 'numpy<2.0' faiss-cpu"
+        )
+    else:
+        warnings.warn("FAISS not available. Install with: pip install faiss-cpu")
 
 from .multi_node_embedder import EmbeddingResult
 
@@ -344,38 +354,63 @@ class FAISSVectorStore(BaseVectorStore):
         self.node_texts = {}
         self.node_types = {}
 
+        # GPU 리소스 설정
+        self.gpu_resources = None
+        self.use_gpu = False
+
     def initialize(self, dimension: int) -> None:
         """FAISS 인덱스 초기화"""
         self.dimension = dimension
+
+        # GPU 사용 가능 여부 확인
+        try:
+            import faiss
+
+            ngpus = faiss.get_num_gpus()
+            self.use_gpu = ngpus > 0
+
+            if self.use_gpu:
+                self.gpu_resources = faiss.StandardGpuResources()
+                print(f"✅ FAISS will use GPU ({ngpus} GPUs available)")
+        except:
+            self.use_gpu = False
+            print("⚠️ GPU not available, using CPU")
 
         # 인덱스 타입에 따른 생성
         if self.config.index_type == "flat":
             if self.config.distance_metric == "cosine":
                 # 코사인 유사도용 (내적)
-                self.index = faiss.IndexFlatIP(dimension)
+                cpu_index = faiss.IndexFlatIP(dimension)
             else:
                 # L2 거리
-                self.index = faiss.IndexFlatL2(dimension)
+                cpu_index = faiss.IndexFlatL2(dimension)
 
         elif self.config.index_type == "ivf":
             # IVF (Inverted File) 인덱스
             nlist = 100  # 클러스터 수
             quantizer = faiss.IndexFlatL2(dimension)
-            self.index = faiss.IndexIVFFlat(quantizer, dimension, nlist)
+            cpu_index = faiss.IndexIVFFlat(quantizer, dimension, nlist)
 
         elif self.config.index_type == "hnsw":
             # HNSW (Hierarchical Navigable Small World)
-            self.index = faiss.IndexHNSWFlat(dimension, 32)
-            self.index.hnsw.efConstruction = 40
-            self.index.hnsw.efSearch = 16
+            cpu_index = faiss.IndexHNSWFlat(dimension, 32)
+            cpu_index.hnsw.efConstruction = 40
+            cpu_index.hnsw.efSearch = 16
 
         else:
             # 기본값: Flat 인덱스
-            self.index = faiss.IndexFlatIP(dimension)
+            cpu_index = faiss.IndexFlatIP(dimension)
+
+        # GPU로 전송 (가능한 경우)
+        if self.use_gpu and cpu_index:
+            self.index = faiss.index_cpu_to_gpu(self.gpu_resources, 0, cpu_index)
+        else:
+            self.index = cpu_index
 
         self.is_initialized = True
+        gpu_status = "GPU" if self.use_gpu else "CPU"
         logger.info(
-            f"✅ FAISS index initialized: {self.config.index_type}, dim={dimension}"
+            f"✅ FAISS index initialized: {self.config.index_type}, {gpu_status}, dim={dimension}"
         )
 
     def add_embeddings(

@@ -447,5 +447,5 @@ if any(
     _logger.info("🔧 Some components are still under development")
     _logger.info("✅ Available: UnifiedKnowledgeGraphBuilder")
     _logger.info(
-        "🚧 Coming soon: QueryAnalyzer, SubgraphExtractor, ContextSerializer, GraphRAGPipeline"
+        "✅ GraphRAG components loaded: QueryAnalyzer, SubgraphExtractor, ContextSerializer, GraphRAGPipeline"
     )

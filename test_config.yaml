@@ -1,0 +1,22 @@
+embedding:
+  batch_size: 32
+  device: auto
+  model_name: auto
+graph:
+  cache_enabled: true
+  unified_graph_path: ./graphs/unified/unified_knowledge_graph.json
+  vector_store_path: ./graphs/embeddings
+llm:
+  max_tokens: 2000
+  model_name: gpt-4
+  provider: openai
+  temperature: 0.1
+qa:
+  chain_type: retrieval_qa
+  enable_memory: false
+  max_docs: 10
+  min_relevance_score: 0.3
+system:
+  log_level: INFO
+  max_workers: 4
+  verbose: false
