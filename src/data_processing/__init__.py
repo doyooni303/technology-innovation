@@ -7,7 +7,7 @@ from .bibtex_parser import BibtexParser
 from .pdf_keyword_extractor import PDFKeywordExtractor
 from .reference_extractor import ReferenceExtractor
 from .semantic_similarity_extractor import SemanticSimilarityExtractor
-from .main import run_complete_data_processing
+from .integrate_data import run_complete_data_processing
 
 __all__ = [
     "BibtexParser",
