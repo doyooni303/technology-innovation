@@ -313,20 +313,39 @@ class ReferenceExtractor:
         return citation_network
 
     def save_citation_network(self, citation_network, output_dir):
-        """인용 네트워크를 파일로 저장"""
+        """인용 네트워크를 파일로 저장 (graph_construction 모듈과 호환)"""
         output_dir = Path(output_dir)
 
-        # 상세 정보 저장
+        # 1. 상세 정보 저장 (기존과 동일)
         detailed_file = output_dir / "citation_network_detailed.json"
         with open(detailed_file, "w", encoding="utf-8") as f:
             json.dump(citation_network, f, ensure_ascii=False, indent=2)
 
-        # 간단한 형태로 변환 (그래프 구축용)
+        # 2. 그래프 구축용 형태로 변환 (필드명 통일)
+        graph_ready_network = {}
+        for citing_paper, citations in citation_network.items():
+            graph_ready_network[citing_paper] = [
+                {
+                    "cited_paper_id": cite["cited_paper_id"],  # ✅ 일관된 필드명
+                    "similarity": cite["similarity"],
+                    "reference_text": cite.get("reference_text", ""),  # 추가 정보 포함
+                    "extracted_title": cite.get("extracted_title", ""),
+                    "extracted_year": cite.get("extracted_year", ""),
+                }
+                for cite in citations
+            ]
+
+        # 3. 그래프 구축용 파일 저장
+        graph_file = output_dir / "citation_network_graph_ready.json"
+        with open(graph_file, "w", encoding="utf-8") as f:
+            json.dump(graph_ready_network, f, ensure_ascii=False, indent=2)
+
+        # 4. 간단한 형태 (호환성 유지)
         simple_network = {}
         for citing_paper, citations in citation_network.items():
             simple_network[citing_paper] = [
                 {
-                    "cited_paper": cite["cited_paper_id"],
+                    "cited_paper_id": cite["cited_paper_id"],  # ✅ 통일된 필드명
                     "similarity": cite["similarity"],
                 }
                 for cite in citations
@@ -338,9 +357,10 @@ class ReferenceExtractor:
 
         print(f"💾 Citation network saved:")
         print(f"   📄 Detailed: {detailed_file}")
+        print(f"   🔗 Graph Ready: {graph_file}")
         print(f"   📊 Simple: {simple_file}")
 
-        return simple_file
+        return graph_file  # graph_construction에서 사용할 파일 반환
 
 
 def main():
@@ -365,8 +385,13 @@ def main():
     # 인용 네트워크 구축
     citation_network = extractor.build_citation_network(papers_metadata)
 
-    # 결과 저장
+    # 결과 저장 (graph_construction 모듈과 호환되는 형태)
     output_file = extractor.save_citation_network(citation_network, PROCESSED_DIR)
+
+    print(f"\n✅ Citation network extraction completed!")
+    print(f"📁 Graph-ready output: {output_file}")
+    print(f"💡 Next step: Run citation graph construction")
+    print(f"   python src/graph_construction/citation_graph.py")
 
     return citation_network, output_file
 
