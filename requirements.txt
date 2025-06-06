@@ -1,0 +1,25 @@
+
+# GraphRAG 문헌분석 프레임워크 필수 패키지
+
+# 그래프 라이브러리
+networkx>=3.0
+python-louvain>=0.16
+
+# 문서 처리
+pybtex>=0.24
+pypdf2>=3.0
+pdfplumber>=0.9
+
+# NLP 및 임베딩  
+sentence-transformers>=2.2
+nltk>=3.8
+
+# 벡터 검색
+faiss-gpu>=1.7
+
+# 시각화
+plotly>=5.17
+
+# 유틸리티
+python-dotenv>=1.0
+tqdm>=4.64
