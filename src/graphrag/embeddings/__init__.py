@@ -28,6 +28,8 @@ def check_embedding_dependencies() -> Dict[str, bool]:
         "transformers": False,
         "numpy": False,
         "scikit-learn": False,
+        "tqdm": False,  # 👈 추가
+        "pandas": False,  # 👈 추가
     }
 
     for package in dependencies:
@@ -100,6 +102,11 @@ try:
     )
 
     from .multi_node_embedder import MultiNodeEmbedder
+    from .vector_store_manager import (
+        VectorStoreManager,
+        create_vector_store,
+        SearchResult,
+    )
 
     _components_available = True
 
@@ -112,8 +119,17 @@ except ImportError as e:
         def __init__(self, *args, **kwargs):
             raise ImportError("MultiNodeEmbedder requires additional dependencies")
 
+    class VectorStoreManager:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("VectorStoreManager requires additional dependencies")
+
+    class EmbeddingResult:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("EmbeddingResult requires additional dependencies")
+
     BaseEmbeddingModel = None
     BaseNodeTextProcessor = None
+    SearchResult = None  # 👈 추가
 
 
 # 편의 함수들
@@ -175,6 +191,9 @@ __all__ = [
     # 기본 클래스들
     "BaseEmbeddingModel",
     "BaseNodeTextProcessor",
+    "VectorStoreManager",
+    "EmbeddingResult",
+    "SearchResult",
     # 구체적 구현들 (사용 가능한 경우)
     "SentenceTransformerModel",
     "HuggingFaceModel",
@@ -186,6 +205,7 @@ __all__ = [
     "create_embedding_model",
     "create_text_processor",
     "create_embedder",
+    "create_vector_store",
     # 유틸리티
     "get_available_models",
     "print_embedding_dependencies",
