@@ -495,7 +495,7 @@ class GraphRAGPipeline:
         config = self.config_manager.config
 
         # 필요한 디렉토리 생성
-        self.config_manager.create_directories()
+        self.config_manager._create_directories()
 
         # 임베딩 생성기 초기화 (설정 관리자 사용)
         from .embeddings.multi_node_embedder import create_embedder_with_config
@@ -738,12 +738,12 @@ class GraphRAGPipeline:
             config = self.config_manager.config
             status["configuration"] = {
                 "llm_provider": config.llm.provider,
-                "embedding_model": config.embedding.model_name,
+                "embedding_model": config.embeddings.sentence_transformers.model_name,
                 "vector_store_type": config.vector_store.store_type,
                 "paths": {
                     "unified_graph": config.graph.unified_graph_path,
                     "vector_store_root": config.paths.vector_store_root,
-                    "embeddings_dir": config.paths.vector_store_embeddings,
+                    "embeddings_dir": config.paths.vector_store.embeddings,
                     "store_directory": self.config_manager.get_vector_store_config()[
                         "persist_directory"
                     ],

@@ -1,13 +1,6 @@
 """
-GraphRAG 설정 관리 모듈
-Configuration Manager for GraphRAG System
-
-시스템 전체 설정 및 인증 정보 통합 관리
-- 환경 변수 및 .env 파일 지원
-- YAML/JSON 설정 파일 로딩
-- API 키 및 인증 정보 보안 관리
-- 설정 검증 및 기본값 제공
-- 런타임 설정 업데이트
+GraphRAG 설정 관리 모듈 - 완전 통합 버전
+1단계 (확장된 dataclass) + 2단계 (개선된 파싱) 통합
 """
 
 import os
@@ -18,7 +11,6 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-import warnings
 
 # 설정 파일 로딩
 try:
@@ -27,171 +19,356 @@ try:
     _dotenv_available = True
 except ImportError:
     _dotenv_available = False
-    warnings.warn(
-        "python-dotenv not available. Install with: pip install python-dotenv"
-    )
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
 
 
 class ConfigSource(Enum):
-    """설정 소스 우선순위 (높은 숫자가 우선)"""
+    """설정 소스 우선순위"""
 
     DEFAULT = 1
     CONFIG_FILE = 2
-    ENV_FILE = 3
-    ENVIRONMENT = 4
-    RUNTIME = 5
+    ENVIRONMENT = 3
 
 
+# ============================================================================
+# 1단계: YAML 구조에 맞춘 확장된 dataclass들
+# ============================================================================
+
+
+# LLM 관련 설정들
 @dataclass
-class LLMConfig:
-    """LLM 설정 - YAML 구조에 맞춤"""
+class HuggingFaceLocalConfig:
+    """HuggingFace 로컬 모델 설정"""
 
-    provider: str = "huggingface_local"  # YAML 기본값에 맞춤
-    model_name: str = "gpt-3.5-turbo"
-    api_key: Optional[str] = None
-    api_base: Optional[str] = None
-    temperature: float = 0.1
-    max_tokens: Optional[int] = None
-    streaming: bool = False
-    timeout: int = 60
-
-    # 로컬 모델 설정 (YAML에서 huggingface_local 섹션)
-    model_path: Optional[str] = (
-        "/DATA/MODELS/models--meta-llama--Llama-3.1-8B-Instruct"  # YAML 기본값
-    )
-    device_map: str = "auto"  # GPU 할당
-    torch_dtype: str = "bfloat16"  # 메모리 효율성
-    max_new_tokens: int = 2048  # 생성 토큰 수
-    trust_remote_code: bool = True  # HF 모델용
-    load_in_8bit: bool = False  # 양자화 옵션
-    load_in_4bit: bool = False  # 더 강한 양자화
-
-    # 생성 설정 (YAML에 맞춤)
+    model_path: str = "/DATA/MODELS/models--meta-llama--Llama-3.1-8B-Instruct"
+    max_new_tokens: int = 2048
     do_sample: bool = True
     top_p: float = 0.9
     top_k: int = 50
     repetition_penalty: float = 1.1
-    batch_size: int = 1
+    device_map: str = "auto"
+    torch_dtype: str = "bfloat16"
+    trust_remote_code: bool = True
+    batch_size: int = 32
 
 
 @dataclass
-class PathConfig:
-    """경로 설정 클래스 - YAML paths 섹션에 맞춤"""
+class OpenAIConfig:
+    """OpenAI API 설정"""
 
-    # 기본 디렉토리 (YAML과 일치)
-    data_dir: str = "./data"
-    processed_dir: str = "./data/processed"
-
-    # 그래프 관련 (YAML paths에 맞춤)
-    unified_graph: str = "./data/processed/graphs/unified/unified_knowledge_graph.json"
-    individual_graphs_dir: str = "./data/processed/graphs"
-
-    # 벡터 저장소 구조 (YAML vector_store 섹션과 일치)
-    vector_store_root: str = "./data/processed/vector_store"
-    vector_store_embeddings: str = "./data/processed/vector_store/embeddings"
-    vector_store_faiss: str = "./data/processed/vector_store/faiss"
-    vector_store_chromadb: str = "./data/processed/vector_store/chromadb"
-    vector_store_simple: str = "./data/processed/vector_store/simple"
-
-    # 캐시 디렉토리 (YAML과 일치)
-    cache_dir: str = "./cache"
-    embeddings_cache: str = "./cache/embeddings"
-    query_cache: str = "./cache/queries"
-    logs_dir: str = "./logs"
-
-    # 서버 모델 경로 (YAML과 일치)
-    models_dir: str = "/DATA/MODELS"
+    api_key: str = "${OPENAI_API_KEY}"
+    model_name: str = "gpt-4o"
+    timeout: int = 60
 
 
 @dataclass
-class EmbeddingConfig:
-    """임베딩 설정 - YAML embeddings 섹션에 맞춤"""
+class AnthropicConfig:
+    """Anthropic API 설정"""
 
-    model_type: str = "sentence-transformers"  # YAML 기본값
-    model_name: str = "paraphrase-multilingual-mpnet-base-v2"  # YAML 기본값
+    api_key: str = "${ANTHROPIC_API_KEY}"
+    model_name: str = "claude-3-5-sonnet"
+    timeout: int = 60
+
+
+@dataclass
+class HuggingFaceAPIConfig:
+    """HuggingFace API 설정"""
+
+    model_name: str = "microsoft/DialoGPT-large"
+    api_key: str = "${HUGGINGFACE_API_KEY}"
+
+
+@dataclass
+class LLMConfig:
+    """LLM 통합 설정"""
+
+    provider: str = "huggingface_local"
+    temperature: float = 0.1
+
+    # 각 프로바이더별 중첩 설정
+    huggingface_local: HuggingFaceLocalConfig = field(
+        default_factory=HuggingFaceLocalConfig
+    )
+    openai: OpenAIConfig = field(default_factory=OpenAIConfig)
+    anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
+    huggingface_api: HuggingFaceAPIConfig = field(default_factory=HuggingFaceAPIConfig)
+
+
+# 임베딩 관련 설정들
+@dataclass
+class SentenceTransformersConfig:
+    """SentenceTransformers 설정"""
+
+    model_name: str = "paraphrase-multilingual-mpnet-base-v2"
     device: str = "auto"
     batch_size: int = 32
-    max_length: int = 512
     cache_dir: str = "./cache/embeddings"
 
-    # 임베딩 파일 저장 경로 (YAML과 일치)
+
+@dataclass
+class EmbeddingsConfig:
+    """임베딩 설정 (YAML의 embeddings 키에 대응)"""
+
+    model_type: str = "sentence-transformers"
     save_directory: str = "./data/processed/vector_store/embeddings"
+
+    sentence_transformers: SentenceTransformersConfig = field(
+        default_factory=SentenceTransformersConfig
+    )
+
+
+# 벡터 저장소 관련 설정들
+@dataclass
+class FAISSConfig:
+    """FAISS 벡터 저장소 설정"""
+
+    persist_directory: str = "./data/processed/vector_store/faiss"
+    index_type: str = "flat"
+    distance_metric: str = "cosine"
+    use_gpu: bool = False
+    gpu_id: int = 0
+    gpu_memory_fraction: float = 0.5
+
+
+@dataclass
+class ChromaDBConfig:
+    """ChromaDB 벡터 저장소 설정"""
+
+    persist_directory: str = "./data/processed/vector_store/chromadb"
+    collection_name: str = "graphrag_embeddings"
+    distance_metric: str = "cosine"
+
+
+@dataclass
+class SimpleStoreConfig:
+    """Simple 벡터 저장소 설정"""
+
+    persist_directory: str = "./data/processed/vector_store/simple"
 
 
 @dataclass
 class VectorStoreConfig:
-    """벡터 저장소 설정 - YAML vector_store 섹션에 맞춤"""
+    """벡터 저장소 통합 설정"""
 
-    store_type: str = "faiss"  # YAML 기본값
-    persist_directory: str = "./data/processed/vector_store"  # YAML 루트 경로
-    collection_name: str = "graphrag_embeddings"
-    distance_metric: str = "cosine"
-    index_type: str = "flat"
-    batch_size: int = 128  # YAML 값에 맞춤
-    cache_size: int = 10000
+    store_type: str = "faiss"
+    batch_size: int = 128
+    persist_directory: str = "./data/processed/vector_store"
 
-    # 중첩 구조 저장소별 설정 (YAML에서 로드)
-    faiss: Optional[Dict[str, Any]] = None
-    chromadb: Optional[Dict[str, Any]] = None
-    simple: Optional[Dict[str, Any]] = None
+    # 각 저장소별 중첩 설정
+    faiss: FAISSConfig = field(default_factory=FAISSConfig)
+    chromadb: ChromaDBConfig = field(default_factory=ChromaDBConfig)
+    simple: SimpleStoreConfig = field(default_factory=SimpleStoreConfig)
 
-    # 기존 평면화된 속성들 (하위 호환성용)
-    faiss_directory: str = "./data/processed/vector_store/faiss"
-    chromadb_directory: str = "./data/processed/vector_store/chromadb"
-    simple_directory: str = "./data/processed/vector_store/simple"
 
-    # FAISS 관련 설정들 (YAML 기본값에 맞춤)
-    faiss_index_type: str = "flat"
-    faiss_distance_metric: str = "cosine"
-    use_gpu: bool = False  # YAML에서 개발 단계는 CPU 사용
-    gpu_id: int = 0
-    gpu_memory_fraction: float = 0.5
+# 그래프 처리 관련 설정들
+@dataclass
+class NodeEmbeddingsConfig:
+    """노드 임베딩 설정"""
 
-    # ChromaDB 관련 설정들
-    chromadb_collection_name: str = "graphrag_embeddings"
-    chromadb_distance_metric: str = "cosine"
-
-    def __post_init__(self):
-        """서브 디렉토리 자동 설정 - 중첩 구조와 평면 구조 모두 지원"""
-        # 중첩 구조에서 평면 구조로 변환 (필요시)
-        if self.faiss and isinstance(self.faiss, dict):
-            self.faiss_directory = self.faiss.get(
-                "persist_directory", f"{self.persist_directory}/faiss"
-            )
-            self.faiss_index_type = self.faiss.get("index_type", "flat")
-            self.faiss_distance_metric = self.faiss.get("distance_metric", "cosine")
-            self.use_gpu = self.faiss.get("use_gpu", False)
-            self.gpu_id = self.faiss.get("gpu_id", 0)
-            self.gpu_memory_fraction = self.faiss.get("gpu_memory_fraction", 0.5)
-
-        if self.chromadb and isinstance(self.chromadb, dict):
-            self.chromadb_directory = self.chromadb.get(
-                "persist_directory", f"{self.persist_directory}/chromadb"
-            )
-            self.chromadb_collection_name = self.chromadb.get(
-                "collection_name", "graphrag_embeddings"
-            )
-            self.chromadb_distance_metric = self.chromadb.get(
-                "distance_metric", "cosine"
-            )
-
-        if self.simple and isinstance(self.simple, dict):
-            self.simple_directory = self.simple.get(
-                "persist_directory", f"{self.persist_directory}/simple"
-            )
+    max_text_length: int = 512
+    batch_size: int = 32
+    cache_embeddings: bool = True
+    cache_dir: str = "./cache/embeddings"
+    output_directory: str = "./data/processed/vector_store/embeddings"
 
 
 @dataclass
+class SubgraphExtractionConfig:
+    """서브그래프 추출 설정"""
+
+    max_nodes: int = 300
+    max_edges: int = 800
+    max_hops: int = 3
+    initial_top_k: int = 25
+    similarity_threshold: float = 0.5
+    expansion_factor: float = 2.5
+
+
+@dataclass
+class ContextSerializationConfig:
+    """컨텍스트 직렬화 설정"""
+
+    max_tokens: int = 8000
+    format_style: str = "structured"
+    language: str = "mixed"
+    include_statistics: bool = True
+    include_relationships: bool = True
+
+
+@dataclass
+class GraphProcessingConfig:
+    """그래프 처리 통합 설정"""
+
+    node_embeddings: NodeEmbeddingsConfig = field(default_factory=NodeEmbeddingsConfig)
+    subgraph_extraction: SubgraphExtractionConfig = field(
+        default_factory=SubgraphExtractionConfig
+    )
+    context_serialization: ContextSerializationConfig = field(
+        default_factory=ContextSerializationConfig
+    )
+
+
+# 하드웨어 및 성능 설정들
+@dataclass
+class HardwareConfig:
+    """하드웨어 최적화 설정"""
+
+    use_gpu: bool = True
+    gpu_memory_fraction: float = 0.7
+    mixed_precision: bool = True
+    cpu_threads: int = 8
+    enable_gradient_checkpointing: bool = True
+    enable_cpu_offload: bool = False
+
+
+@dataclass
+class PerformanceConfig:
+    """성능 최적화 설정"""
+
+    enable_parallel: bool = True
+    max_workers: int = 4
+    enable_caching: bool = True
+    cache_size_limit: str = "8GB"
+    batch_processing: bool = True
+    memory_limit: str = "16GB"
+    enable_flash_attention: bool = True
+    enable_model_parallelism: bool = True
+
+
+# 쿼리 분석 설정들
+@dataclass
+class ComplexityThresholds:
+    """복잡도 임계값 설정"""
+
+    simple_max: float = 0.3
+    medium_max: float = 0.6
+    complex_max: float = 0.8
+
+
+@dataclass
+class LanguageDetectionConfig:
+    """언어 감지 설정"""
+
+    default_language: str = "ko"
+    supported_languages: List[str] = field(default_factory=lambda: ["ko", "en"])
+
+
+@dataclass
+class QueryTimeouts:
+    """쿼리 타임아웃 설정"""
+
+    simple: int = 20
+    medium: int = 45
+    complex: int = 120
+    exploratory: int = 240
+
+
+@dataclass
+class QueryAnalysisConfig:
+    """쿼리 분석 설정"""
+
+    complexity_thresholds: ComplexityThresholds = field(
+        default_factory=ComplexityThresholds
+    )
+    language_detection: LanguageDetectionConfig = field(
+        default_factory=LanguageDetectionConfig
+    )
+    timeouts: QueryTimeouts = field(default_factory=QueryTimeouts)
+
+
+# 경로 관리 설정들
+@dataclass
+class VectorStorePathsConfig:
+    """벡터 저장소 경로들"""
+
+    embeddings: str = "./data/processed/vector_store/embeddings"
+    faiss: str = "./data/processed/vector_store/faiss"
+    chromadb: str = "./data/processed/vector_store/chromadb"
+    simple: str = "./data/processed/vector_store/simple"
+
+
+@dataclass
+class PathsConfig:
+    """경로 설정 통합"""
+
+    data_dir: str = "./data"
+    processed_dir: str = "./data/processed"
+    unified_graph: str = "./data/processed/graphs/unified/unified_knowledge_graph.json"
+    individual_graphs_dir: str = "./data/processed/graphs"
+    vector_store_root: str = "./data/processed/vector_store"
+    cache_dir: str = "./cache"
+    embeddings_cache: str = "./cache/embeddings"
+    query_cache: str = "./cache/queries"
+    logs_dir: str = "./logs"
+    models_dir: str = "/DATA/MODELS"
+
+    # 벡터 저장소 하위 구조
+    vector_store: VectorStorePathsConfig = field(default_factory=VectorStorePathsConfig)
+
+
+# 로깅 설정들
+@dataclass
+class FileLoggingConfig:
+    """파일 로깅 설정"""
+
+    enabled: bool = True
+    log_file: str = "./logs/graphrag.log"
+    max_size: str = "50MB"
+    backup_count: int = 5
+
+
+@dataclass
+class ConsoleLoggingConfig:
+    """콘솔 로깅 설정"""
+
+    enabled: bool = True
+    colored: bool = True
+
+
+@dataclass
+class LoggingConfig:
+    """로깅 통합 설정"""
+
+    level: str = "INFO"
+    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    file_logging: FileLoggingConfig = field(default_factory=FileLoggingConfig)
+    console_logging: ConsoleLoggingConfig = field(default_factory=ConsoleLoggingConfig)
+
+
+# 개발 및 서버 설정들
+@dataclass
+class DevelopmentConfig:
+    """개발 설정"""
+
+    debug_mode: bool = False
+    test_mode: bool = False
+    sample_data_only: bool = False
+    max_test_nodes: int = 200
+    enable_profiling: bool = True
+
+
+@dataclass
+class ServerConfig:
+    """서버 환경 설정"""
+
+    preload_models: bool = True
+    model_cache_size: int = 2
+    auto_cleanup: bool = True
+    cleanup_interval: int = 3600
+    restrict_model_access: bool = True
+
+
+# 기존 단순 설정들 (호환성 유지)
+@dataclass
 class GraphConfig:
-    """그래프 설정 - YAML graph 섹션에 맞춤"""
+    """그래프 설정 (기존 호환성 유지)"""
 
     unified_graph_path: str = (
         "./data/processed/graphs/unified/unified_knowledge_graph.json"
     )
-    vector_store_path: str = "./data/processed/vector_store"  # 루트 경로
+    vector_store_path: str = "./data/processed/vector_store"
     graphs_directory: str = "./data/processed/graphs"
     cache_enabled: bool = True
     cache_ttl_hours: int = 24
@@ -212,66 +389,7 @@ class QAConfig:
 
 @dataclass
 class SystemConfig:
-    """시스템 설정 - YAML 성능 최적화 섹션 반영"""
-
-    log_level: str = "INFO"
-    verbose: bool = False
-    parallel_processing: bool = True
-    max_workers: int = 4  # YAML performance 섹션과 일치
-    temp_directory: str = "./tmp"
-    enable_monitoring: bool = False
-
-    # YAML performance 섹션 설정들 추가
-    enable_parallel: bool = True
-    enable_caching: bool = True
-    cache_size_limit: str = "8GB"
-    batch_processing: bool = True
-    memory_limit: str = "16GB"
-
-    # 고급 최적화 (YAML에서)
-    enable_flash_attention: bool = True
-    enable_model_parallelism: bool = True
-
-
-@dataclass
-class GraphRAGConfig:
-    """GraphRAG 전체 설정 - YAML 구조에 완전히 맞춤"""
-
-    # 하위 설정들 - 기본값들이 YAML과 일치
-    llm: LLMConfig = field(default_factory=LLMConfig)
-    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
-    graph: GraphConfig = field(default_factory=GraphConfig)
-    qa: QAConfig = field(default_factory=QAConfig)
-    system: SystemConfig = field(default_factory=SystemConfig)
-
-    # 경로 및 벡터 저장소 설정
-    paths: PathConfig = field(default_factory=PathConfig)
-    vector_store: VectorStoreConfig = field(
-        default_factory=lambda: VectorStoreConfig(store_type="faiss")
-    )
-
-    # 메타데이터
-    version: str = "1.0.0"
-    config_source: ConfigSource = ConfigSource.DEFAULT
-    last_updated: Optional[str] = None
-
-
-@dataclass
-class QAConfig:
-    """QA 체인 설정"""
-
-    chain_type: str = "retrieval_qa"
-    max_docs: int = 10
-    min_relevance_score: float = 0.3
-    return_source_documents: bool = True
-    enable_memory: bool = False
-    memory_type: str = "buffer"
-    max_memory_tokens: int = 4000
-
-
-@dataclass
-class SystemConfig:
-    """시스템 설정"""
+    """시스템 설정 (기본)"""
 
     log_level: str = "INFO"
     verbose: bool = False
@@ -281,8 +399,59 @@ class SystemConfig:
     enable_monitoring: bool = False
 
 
+# 메인 설정 클래스
+@dataclass
+class GraphRAGConfig:
+    """GraphRAG 전체 설정 - YAML 구조에 완전 매칭"""
+
+    # 메인 설정 섹션들
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
+    vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
+    graph_processing: GraphProcessingConfig = field(
+        default_factory=GraphProcessingConfig
+    )
+    hardware: HardwareConfig = field(default_factory=HardwareConfig)
+    performance: PerformanceConfig = field(default_factory=PerformanceConfig)
+    query_analysis: QueryAnalysisConfig = field(default_factory=QueryAnalysisConfig)
+    paths: PathsConfig = field(default_factory=PathsConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    development: DevelopmentConfig = field(default_factory=DevelopmentConfig)
+    server: ServerConfig = field(default_factory=ServerConfig)
+
+    # 기존 호환성 유지용
+    graph: GraphConfig = field(default_factory=GraphConfig)
+    qa: QAConfig = field(default_factory=QAConfig)
+    system: SystemConfig = field(default_factory=SystemConfig)
+
+    # 메타데이터
+    version: str = "1.0.0"
+    config_source: ConfigSource = ConfigSource.DEFAULT
+    last_updated: Optional[str] = None
+
+    @property
+    def embedding(self):
+        """임베딩 설정 호환성 속성 (embedding -> embeddings)"""
+
+        # 호환성을 위한 가짜 객체 생성
+        class EmbeddingCompat:
+            def __init__(self, embeddings_config):
+                self.model_name = embeddings_config.sentence_transformers.model_name
+                self.device = embeddings_config.sentence_transformers.device
+                self.batch_size = embeddings_config.sentence_transformers.batch_size
+                self.save_directory = embeddings_config.save_directory
+                self.cache_dir = embeddings_config.sentence_transformers.cache_dir
+
+        return EmbeddingCompat(self.embeddings)
+
+
+# ============================================================================
+# 2단계: 개선된 GraphRAGConfigManager 클래스
+# ============================================================================
+
+
 class GraphRAGConfigManager:
-    """GraphRAG 설정 관리자"""
+    """단순화된 GraphRAG 설정 관리자 - 개선된 YAML 파싱"""
 
     def __init__(
         self,
@@ -290,793 +459,528 @@ class GraphRAGConfigManager:
         env_file: Optional[str] = None,
         auto_load: bool = True,
     ):
-        """
-        Args:
-            config_file: 설정 파일 경로 (YAML/JSON)
-            env_file: .env 파일 경로
-            auto_load: 자동 로딩 여부
-        """
         self.config_file = Path(config_file) if config_file else None
         self.env_file = Path(env_file) if env_file else None
 
         # 기본 설정으로 시작
         self.config = GraphRAGConfig()
 
-        # 설정 소스별 저장 (디버깅용)
-        self.config_sources: Dict[str, Any] = {}
-
         if auto_load:
             self.load_all()
 
-        logger.info("✅ GraphRAGConfigManager initialized")
+        logger.info("✅ GraphRAGConfigManager initialized (complete version)")
 
     def load_all(self) -> None:
-        """모든 설정 소스를 우선순위에 따라 로딩"""
+        """모든 설정 소스 로딩 (개선된 순서)"""
+        logger.info("🔧 Loading configuration with improved parsing...")
 
-        logger.info("🔧 Loading configuration from all sources...")
+        # 1. 핵심 환경변수 로딩 (4개만)
+        self._load_core_environment_variables()
 
-        # 1. 기본 설정 (이미 적용됨)
-        self.config_sources["default"] = asdict(self.config)
-
-        # 2. 설정 파일
+        # 2. YAML 설정 파일 로딩 (메인 설정)
         if self.config_file and self.config_file.exists():
-            self._load_config_file()
+            self._load_yaml_config_file()
+        elif Path("graphrag_config.yaml").exists():
+            self._load_yaml_config_file(Path("graphrag_config.yaml"))
 
-        # 3. .env 파일
-        if self.env_file and self.env_file.exists():
-            self._load_env_file()
-        elif Path(".env").exists():
-            self._load_env_file(Path(".env"))
+        # 3. 설정 검증 및 디렉토리 생성
+        self._validate_and_setup()
 
-        # 4. 환경 변수
-        self._load_environment_variables()
+        logger.info("✅ Configuration loaded with improved parsing")
 
-        # 5. 설정 검증
-        self._validate_config()
+    def _load_core_environment_variables(self) -> None:
+        """핵심 환경변수 4개만 로딩 (단순화됨)"""
+        logger.info("🌍 Loading core environment variables (4 only)...")
 
-        logger.info("✅ Configuration loaded successfully")
+        # .env 파일 로딩 (있으면)
+        if _dotenv_available:
+            env_path = self.env_file or Path(".env")
+            if env_path.exists():
+                load_dotenv(env_path, override=False)
+                logger.info(f"📂 Loaded .env file: {env_path}")
+        else:
+            logger.warning("⚠️ python-dotenv not available")
 
-    def _load_config_file(self) -> None:
-        """설정 파일 로딩 (YAML/JSON)"""
+        # 1. GPU 설정
+        cuda_devices = os.getenv("CUDA_VISIBLE_DEVICES")
+        if cuda_devices is not None:
+            os.environ["CUDA_VISIBLE_DEVICES"] = cuda_devices
+            logger.info(f"🔧 CUDA devices: {cuda_devices}")
 
-        logger.info(f"📂 Loading config file: {self.config_file}")
+        # 2. HuggingFace API 키
+        hf_key = os.getenv("HUGGINGFACE_API_KEY")
+        if hf_key:
+            self.config.llm.huggingface_api.api_key = hf_key
+            logger.info("🔑 HuggingFace API key loaded")
+
+        # 3. 로그 레벨
+        log_level = os.getenv("GRAPHRAG_LOG_LEVEL")
+        if log_level:
+            self.config.system.log_level = log_level.upper()
+            self.config.logging.level = log_level.upper()
+            logging.getLogger().setLevel(
+                getattr(logging, log_level.upper(), logging.INFO)
+            )
+            logger.info(f"📝 Log level: {log_level}")
+
+        # 4. Verbose 모드
+        verbose = os.getenv("GRAPHRAG_VERBOSE")
+        if verbose:
+            verbose_bool = verbose.lower() in ("true", "1", "yes")
+            self.config.system.verbose = verbose_bool
+            logger.info(f"🔍 Verbose mode: {verbose_bool}")
+
+    def _load_yaml_config_file(self, config_path: Optional[Path] = None) -> None:
+        """YAML 설정 파일 로딩"""
+        config_path = config_path or self.config_file
+        logger.info(f"📂 Loading YAML config: {config_path}")
 
         try:
-            with open(self.config_file, "r", encoding="utf-8") as f:
-                if self.config_file.suffix.lower() in [".yml", ".yaml"]:
-                    file_config = yaml.safe_load(f)
-                elif self.config_file.suffix.lower() == ".json":
-                    file_config = json.load(f)
-                else:
-                    raise ValueError(
-                        f"Unsupported config file format: {self.config_file.suffix}"
-                    )
+            with open(config_path, "r", encoding="utf-8") as f:
+                yaml_data = yaml.safe_load(f)
 
-            self.config_sources["config_file"] = file_config
-            self._merge_config(file_config, ConfigSource.CONFIG_FILE)
+            if not yaml_data:
+                logger.warning("⚠️ Empty YAML file")
+                return
 
-            logger.info("✅ Config file loaded")
+            # YAML → dataclass 매핑
+            self._apply_yaml_to_dataclass(yaml_data)
+            logger.info("✅ YAML config applied successfully")
 
         except Exception as e:
-            logger.error(f"❌ Failed to load config file: {e}")
+            logger.error(f"❌ Failed to load YAML config: {e}")
             raise
 
-    def _load_env_file(self, env_path: Optional[Path] = None) -> None:
-        """환경 파일 로딩"""
+    def _apply_yaml_to_dataclass(self, yaml_data: Dict[str, Any]) -> None:
+        """YAML 데이터를 dataclass에 적용"""
 
-        if not _dotenv_available:
-            logger.warning("⚠️ python-dotenv not available, skipping .env file")
-            return
-
-        env_path = env_path or self.env_file
-        logger.info(f"🔐 Loading environment file: {env_path}")
-
-        try:
-            # .env 파일 로딩
-            load_dotenv(env_path, override=False)
-
-            # GraphRAG 관련 환경 변수들 추출
-            env_config = self._extract_env_variables()
-            self.config_sources["env_file"] = env_config
-            self._merge_config(env_config, ConfigSource.ENV_FILE)
-
-            logger.info("✅ Environment file loaded")
-
-        except Exception as e:
-            logger.error(f"❌ Failed to load environment file: {e}")
-
-    def _load_environment_variables(self) -> None:
-        """환경 변수 로딩"""
-
-        logger.info("🌍 Loading environment variables...")
-
-        env_config = self._extract_env_variables()
-        self.config_sources["environment"] = env_config
-        self._merge_config(env_config, ConfigSource.ENVIRONMENT)
-
-    def _extract_env_variables(self) -> Dict[str, Any]:
-        """환경 변수에서 GraphRAG 설정 추출"""
-
-        env_config = {}
-
-        # LLM 설정
-        llm_config = {}
-        if os.getenv("OPENAI_API_KEY"):
-            llm_config["api_key"] = os.getenv("OPENAI_API_KEY")
-            llm_config["provider"] = "openai"
-        if os.getenv("ANTHROPIC_API_KEY"):
-            llm_config["api_key"] = os.getenv("ANTHROPIC_API_KEY")
-            llm_config["provider"] = "anthropic"
-        if os.getenv("HUGGINGFACE_API_TOKEN"):
-            llm_config["api_key"] = os.getenv("HUGGINGFACE_API_TOKEN")
-            llm_config["provider"] = "huggingface"
-
-        if os.getenv("GRAPHRAG_LLM_MODEL"):
-            llm_config["model_name"] = os.getenv("GRAPHRAG_LLM_MODEL")
-        if os.getenv("GRAPHRAG_LLM_TEMPERATURE"):
-            llm_config["temperature"] = float(os.getenv("GRAPHRAG_LLM_TEMPERATURE"))
-        if os.getenv("GRAPHRAG_LLM_MAX_TOKENS"):
-            llm_config["max_tokens"] = int(os.getenv("GRAPHRAG_LLM_MAX_TOKENS"))
-
-        if os.getenv("GRAPHRAG_LOCAL_MODEL_PATH"):
-            llm_config["model_path"] = os.getenv("GRAPHRAG_LOCAL_MODEL_PATH")
-            llm_config["provider"] = "huggingface_local"
-
-        if os.getenv("GRAPHRAG_MODEL_DEVICE_MAP"):
-            llm_config["device_map"] = os.getenv("GRAPHRAG_MODEL_DEVICE_MAP")
-
-        if os.getenv("GRAPHRAG_MODEL_DTYPE"):
-            llm_config["torch_dtype"] = os.getenv("GRAPHRAG_MODEL_DTYPE")
-
-        if llm_config:
-            env_config["llm"] = llm_config
-
-        # 임베딩 설정
-        embedding_config = {}
-        if os.getenv("GRAPHRAG_EMBEDDING_MODEL"):
-            embedding_config["model_name"] = os.getenv("GRAPHRAG_EMBEDDING_MODEL")
-        if os.getenv("GRAPHRAG_EMBEDDING_DEVICE"):
-            embedding_config["device"] = os.getenv("GRAPHRAG_EMBEDDING_DEVICE")
-        if os.getenv("GRAPHRAG_EMBEDDING_BATCH_SIZE"):
-            embedding_config["batch_size"] = int(
-                os.getenv("GRAPHRAG_EMBEDDING_BATCH_SIZE")
-            )
-
-        if embedding_config:
-            env_config["embedding"] = embedding_config
-
-        # 그래프 설정
-        graph_config = {}
-        if os.getenv("GRAPHRAG_UNIFIED_GRAPH_PATH"):
-            graph_config["unified_graph_path"] = os.getenv(
-                "GRAPHRAG_UNIFIED_GRAPH_PATH"
-            )
-        if os.getenv("GRAPHRAG_VECTOR_STORE_PATH"):
-            graph_config["vector_store_path"] = os.getenv("GRAPHRAG_VECTOR_STORE_PATH")
-        if os.getenv("GRAPHRAG_GRAPHS_DIRECTORY"):
-            graph_config["graphs_directory"] = os.getenv("GRAPHRAG_GRAPHS_DIRECTORY")
-
-        if graph_config:
-            env_config["graph"] = graph_config
-
-        # 시스템 설정
-        system_config = {}
-        if os.getenv("GRAPHRAG_LOG_LEVEL"):
-            system_config["log_level"] = os.getenv("GRAPHRAG_LOG_LEVEL")
-        if os.getenv("GRAPHRAG_VERBOSE"):
-            system_config["verbose"] = os.getenv("GRAPHRAG_VERBOSE").lower() == "true"
-        if os.getenv("GRAPHRAG_MAX_WORKERS"):
-            system_config["max_workers"] = int(os.getenv("GRAPHRAG_MAX_WORKERS"))
-
-        if system_config:
-            env_config["system"] = system_config
-
-        return env_config
-
-    def _merge_config(self, new_config: Dict[str, Any], source: ConfigSource) -> None:
-        """새로운 설정을 기존 설정에 병합"""
-
-        # 깊은 병합 수행
-        def deep_merge(base: Dict, update: Dict) -> Dict:
-            for key, value in update.items():
-                if (
-                    key in base
-                    and isinstance(base[key], dict)
-                    and isinstance(value, dict)
-                ):
-                    deep_merge(base[key], value)
-                else:
-                    base[key] = value
-            return base
-
-        # dataclass를 dict로 변환
-        config_dict = asdict(self.config)
-
-        # 병합
-        deep_merge(config_dict, new_config)
-
-        # dict를 다시 dataclass로 변환
-        self.config = self._dict_to_config(config_dict)
-        self.config.config_source = source
-
-    def _dict_to_config(self, config_dict: Dict[str, Any]) -> GraphRAGConfig:
-        """딕셔너리를 GraphRAGConfig로 변환 (중첩 구조 지원)"""
-        print(config_dict.keys())
-        import pdb
-
-        pdb.set_trace()
-        # LLM 설정 처리 - 중첩 구조 평면화
-        llm_data = config_dict.get("llm", {}).copy()
-        embedding_data = config_dict.get("embedding", {}).copy()
-        if not embedding_data:
-            embedding_data = config_dict.get("embeddings", {}).copy()
-
-        if "provider" in llm_data:
-            provider = llm_data["provider"]
-
-            # provider별 중첩 설정 평면화
-            if provider in llm_data:  # huggingface_local, openai, anthropic 등
-                logger.info(f"🔧 Processing nested config for provider: {provider}")
-
-                nested_config = llm_data[provider]
-
-                # 중첩된 설정을 상위로 병합 (기존 키 우선)
-                for key, value in nested_config.items():
-                    if key not in llm_data:  # 기존 키가 없으면 추가
-                        llm_data[key] = value
-                        logger.debug(f"   Added {key} = {value}")
-
-                # 중첩 섹션 제거
-                del llm_data[provider]
-                logger.info(f"✅ Flattened {provider} config")
-
-        # 임베딩 설정 처리 - 저장 경로 추가
-        if "model_type" in embedding_data:
-            model_type = embedding_data["model_type"]
-            if model_type in embedding_data:
-                logger.info(f"🔧 Processing nested embedding config for: {model_type}")
-                nested_config = embedding_data[model_type]
-                for key, value in nested_config.items():
-                    if key not in embedding_data:
-                        embedding_data[key] = value
-                        logger.debug(f"   Added embedding {key} = {value}")
-                del embedding_data[model_type]
-                logger.info(f"✅ Flattened {model_type} embedding config")
-
-        # 경로 설정 처리
-        paths_data = config_dict.get("paths", {})
-
-        # paths에서 vector_store 섹션 처리
-        if "vector_store" in paths_data:
-            vs_paths = paths_data["vector_store"]
-            paths_data.update(
-                {
-                    "vector_store_embeddings": vs_paths.get("embeddings", ""),
-                    "vector_store_faiss": vs_paths.get("faiss", ""),
-                    "vector_store_chromadb": vs_paths.get("chromadb", ""),
-                    "vector_store_simple": vs_paths.get("simple", ""),
-                }
-            )
-            # 중첩 구조 제거
-            del paths_data["vector_store"]
-
-        # 벡터 저장소 설정 처리
-        vector_store_data = config_dict.get("vector_store", {}).copy()
-
-        # YAML에서 로드된 중첩 구조 유지하면서 필요한 필드만 평면화
-        store_type = vector_store_data.get("store_type", "faiss")
-
-        # 각 저장소별 중첩 설정을 attributes로 보존
-        if "faiss" in vector_store_data:
-            vector_store_data["faiss"] = vector_store_data["faiss"]  # 중첩 구조 보존
-        if "chromadb" in vector_store_data:
-            vector_store_data["chromadb"] = vector_store_data[
-                "chromadb"
-            ]  # 중첩 구조 보존
-        if "simple" in vector_store_data:
-            vector_store_data["simple"] = vector_store_data["simple"]  # 중첩 구조 보존
-
-        # 기본값 설정
-        if "store_type" not in vector_store_data:
-            vector_store_data["store_type"] = store_type
-
-        # 임베딩에 저장 경로 추가
-        if "save_directory" not in embedding_data:
-            embedding_data["save_directory"] = (
-                "./data/processed/vector_store/embeddings"
-            )
-
-        # 각 설정 클래스 생성
-        try:
-            llm_config = LLMConfig(**llm_data)
-            logger.info("✅ LLMConfig created successfully")
-        except Exception as e:
-            logger.error(f"❌ LLMConfig creation failed: {e}")
-            llm_config = LLMConfig()
-
-        try:
-            embedding_config = EmbeddingConfig(**embedding_data)
-            logger.info("✅ EmbeddingConfig created successfully")
-        except Exception as e:
-            logger.error(f"❌ EmbeddingConfig creation failed: {e}")
-            embedding_config = EmbeddingConfig()
-
-        try:
-            paths_config = PathConfig(**paths_data)
-            logger.info("✅ PathConfig created successfully")
-        except Exception as e:
-            logger.error(f"❌ PathConfig creation failed: {e}")
-            paths_config = PathConfig()
-
-        try:
-            vector_store_config = VectorStoreConfig(**vector_store_data)
-            logger.info("✅ VectorStoreConfig created successfully")
-        except Exception as e:
-            logger.error(f"❌ VectorStoreConfig creation failed: {e}")
-            vector_store_config = VectorStoreConfig()
-
-        print()
-        # 나머지 설정들
-        graph_config = GraphConfig(**config_dict.get("graph", {}))
-        qa_config = QAConfig(**config_dict.get("qa", {}))
-        system_config = SystemConfig(**config_dict.get("system", {}))
-
-        # 메타데이터
-        meta_fields = {
-            "version": config_dict.get("version", "1.0.0"),
-            "config_source": config_dict.get("config_source", ConfigSource.DEFAULT),
-            "last_updated": config_dict.get("last_updated"),
+        # 각 섹션별로 처리
+        section_handlers = {
+            "llm": self._apply_llm_config,
+            "embeddings": self._apply_embeddings_config,
+            "vector_store": self._apply_vector_store_config,
+            "graph_processing": self._apply_graph_processing_config,
+            "hardware": self._apply_hardware_config,
+            "performance": self._apply_performance_config,
+            "query_analysis": self._apply_query_analysis_config,
+            "paths": self._apply_paths_config,
+            "logging": self._apply_logging_config,
+            "development": self._apply_development_config,
+            "server": self._apply_server_config,
+            # 기존 호환성 섹션들
+            "graph": self._apply_graph_config,
+            "qa": self._apply_qa_config,
+            "system": self._apply_system_config,
         }
 
-        return GraphRAGConfig(
-            llm=llm_config,
-            embedding=embedding_config,
-            graph=graph_config,
-            qa=qa_config,
-            system=system_config,
-            paths=paths_config,
-            vector_store=vector_store_config,
-            **meta_fields,
-        )
+        for section_name, handler in section_handlers.items():
+            if section_name in yaml_data:
+                try:
+                    handler(yaml_data[section_name])
+                    logger.debug(f"✅ Applied {section_name} section")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to apply {section_name}: {e}")
 
-    def _validate_config(self) -> None:
-        """설정 검증"""
+    def _apply_llm_config(self, llm_data: Dict[str, Any]) -> None:
+        """LLM 설정 적용"""
+        # 최상위 설정
+        for key, value in llm_data.items():
+            if hasattr(self.config.llm, key) and not isinstance(value, dict):
+                setattr(self.config.llm, key, value)
+
+        # 중첩 설정들
+        provider_configs = {
+            "huggingface_local": self.config.llm.huggingface_local,
+            "openai": self.config.llm.openai,
+            "anthropic": self.config.llm.anthropic,
+            "huggingface_api": self.config.llm.huggingface_api,
+        }
+
+        for provider, config_obj in provider_configs.items():
+            if provider in llm_data and isinstance(llm_data[provider], dict):
+                self._apply_nested_config(llm_data[provider], config_obj)
+
+    def _apply_embeddings_config(self, embeddings_data: Dict[str, Any]) -> None:
+        """임베딩 설정 적용"""
+        for key, value in embeddings_data.items():
+            if hasattr(self.config.embeddings, key) and not isinstance(value, dict):
+                setattr(self.config.embeddings, key, value)
+
+        if "sentence_transformers" in embeddings_data:
+            self._apply_nested_config(
+                embeddings_data["sentence_transformers"],
+                self.config.embeddings.sentence_transformers,
+            )
+
+    def _apply_vector_store_config(self, vector_data: Dict[str, Any]) -> None:
+        """벡터 저장소 설정 적용"""
+        for key, value in vector_data.items():
+            if hasattr(self.config.vector_store, key) and not isinstance(value, dict):
+                setattr(self.config.vector_store, key, value)
+
+        store_configs = {
+            "faiss": self.config.vector_store.faiss,
+            "chromadb": self.config.vector_store.chromadb,
+            "simple": self.config.vector_store.simple,
+        }
+
+        for store_type, config_obj in store_configs.items():
+            if store_type in vector_data:
+                self._apply_nested_config(vector_data[store_type], config_obj)
+
+    def _apply_graph_processing_config(self, graph_proc_data: Dict[str, Any]) -> None:
+        """그래프 처리 설정 적용"""
+        processing_configs = {
+            "node_embeddings": self.config.graph_processing.node_embeddings,
+            "subgraph_extraction": self.config.graph_processing.subgraph_extraction,
+            "context_serialization": self.config.graph_processing.context_serialization,
+        }
+
+        for proc_type, config_obj in processing_configs.items():
+            if proc_type in graph_proc_data:
+                self._apply_nested_config(graph_proc_data[proc_type], config_obj)
+
+    def _apply_paths_config(self, paths_data: Dict[str, Any]) -> None:
+        """경로 설정 적용"""
+        for key, value in paths_data.items():
+            if hasattr(self.config.paths, key) and not isinstance(value, dict):
+                setattr(self.config.paths, key, value)
+
+        if "vector_store" in paths_data and isinstance(
+            paths_data["vector_store"], dict
+        ):
+            self._apply_nested_config(
+                paths_data["vector_store"], self.config.paths.vector_store
+            )
+
+    def _apply_hardware_config(self, hardware_data: Dict[str, Any]) -> None:
+        """하드웨어 설정 적용"""
+        self._apply_nested_config(hardware_data, self.config.hardware)
+
+    def _apply_performance_config(self, perf_data: Dict[str, Any]) -> None:
+        """성능 설정 적용"""
+        self._apply_nested_config(perf_data, self.config.performance)
+
+    def _apply_query_analysis_config(self, query_data: Dict[str, Any]) -> None:
+        """쿼리 분석 설정 적용"""
+        nested_configs = {
+            "complexity_thresholds": self.config.query_analysis.complexity_thresholds,
+            "language_detection": self.config.query_analysis.language_detection,
+            "timeouts": self.config.query_analysis.timeouts,
+        }
+
+        for nested_key, config_obj in nested_configs.items():
+            if nested_key in query_data:
+                self._apply_nested_config(query_data[nested_key], config_obj)
+
+    def _apply_logging_config(self, logging_data: Dict[str, Any]) -> None:
+        """로깅 설정 적용 (환경변수 우선)"""
+        for key, value in logging_data.items():
+            if key == "level" and os.getenv("GRAPHRAG_LOG_LEVEL"):
+                continue  # 환경변수 우선
+            if hasattr(self.config.logging, key) and not isinstance(value, dict):
+                setattr(self.config.logging, key, value)
+
+        if "file_logging" in logging_data:
+            self._apply_nested_config(
+                logging_data["file_logging"], self.config.logging.file_logging
+            )
+        if "console_logging" in logging_data:
+            self._apply_nested_config(
+                logging_data["console_logging"], self.config.logging.console_logging
+            )
+
+    def _apply_development_config(self, dev_data: Dict[str, Any]) -> None:
+        """개발 설정 적용"""
+        self._apply_nested_config(dev_data, self.config.development)
+
+    def _apply_server_config(self, server_data: Dict[str, Any]) -> None:
+        """서버 설정 적용"""
+        self._apply_nested_config(server_data, self.config.server)
+
+    # 기존 호환성 메서드들
+    def _apply_graph_config(self, graph_data: Dict[str, Any]) -> None:
+        """기존 그래프 설정 적용"""
+        self._apply_nested_config(graph_data, self.config.graph)
+
+    def _apply_qa_config(self, qa_data: Dict[str, Any]) -> None:
+        """QA 설정 적용"""
+        self._apply_nested_config(qa_data, self.config.qa)
+
+    def _apply_system_config(self, system_data: Dict[str, Any]) -> None:
+        """시스템 설정 적용 (환경변수 우선)"""
+        for key, value in system_data.items():
+            if key == "log_level" and os.getenv("GRAPHRAG_LOG_LEVEL"):
+                continue
+            if key == "verbose" and os.getenv("GRAPHRAG_VERBOSE"):
+                continue
+            if hasattr(self.config.system, key):
+                setattr(self.config.system, key, value)
+
+    def _apply_nested_config(
+        self, yaml_section: Dict[str, Any], config_obj: Any
+    ) -> None:
+        """중첩된 설정을 dataclass 객체에 적용"""
+        for key, value in yaml_section.items():
+            if hasattr(config_obj, key):
+                if isinstance(value, list):
+                    setattr(config_obj, key, value)
+                elif not isinstance(value, dict):
+                    setattr(config_obj, key, value)
+
+    def _validate_and_setup(self) -> None:
+        """설정 검증 및 디렉토리 생성"""
+        logger.info("🔍 Validating configuration...")
 
         errors = []
         warnings = []
 
         # LLM 설정 검증
-        if not self.config.llm.api_key:
-            warnings.append(
-                f"No API key found for LLM provider: {self.config.llm.provider}"
-            )
+        if self.config.llm.provider == "huggingface_local":
+            model_path = self.config.llm.huggingface_local.model_path
+            if not model_path:
+                errors.append("Local model path is required")
+            elif not Path(model_path).exists():
+                warnings.append(f"Local model path not found: {model_path}")
 
-        if self.config.llm.temperature < 0 or self.config.llm.temperature > 1:
+        # 온도 범위 검증
+        if not (0 <= self.config.llm.temperature <= 1):
             errors.append("LLM temperature must be between 0 and 1")
 
-        # 🆕 로컬 모델 경로 검증
-        if self.config.llm.provider == "huggingface_local":
-            if not self.config.llm.model_path:
-                errors.append(
-                    "Local model path is required for huggingface_local provider"
-                )
-            elif not Path(self.config.llm.model_path).exists():
-                warnings.append(
-                    f"Local model path not found: {self.config.llm.model_path}"
-                )
-
-        # 그래프 경로 검증
-        if self.config.graph.unified_graph_path:
-            graph_path = Path(self.config.graph.unified_graph_path)
-            if not graph_path.exists():
-                warnings.append(f"Unified graph file not found: {graph_path}")
-
-        if self.config.graph.vector_store_path:
-            vector_path = Path(self.config.graph.vector_store_path)
-            if not vector_path.exists():
-                warnings.append(f"Vector store directory not found: {vector_path}")
-
-        # QA 설정 검증
-        if (
-            self.config.qa.min_relevance_score < 0
-            or self.config.qa.min_relevance_score > 1
-        ):
-            errors.append("QA relevance score must be between 0 and 1")
-
-        # 에러가 있으면 예외 발생
         if errors:
             error_msg = "Configuration validation failed:\n" + "\n".join(
                 f"- {err}" for err in errors
             )
             raise ValueError(error_msg)
 
-        # 경고 출력
-        if warnings:
-            for warning in warnings:
-                logger.warning(f"⚠️ Config warning: {warning}")
+        for warning in warnings:
+            logger.warning(f"⚠️ {warning}")
 
-    def update_config(self, **kwargs) -> None:
-        """런타임에 설정 업데이트"""
+        # 디렉토리 생성
+        self._create_directories()
+        logger.info("✅ Configuration validated and directories created")
 
-        logger.info("📝 Updating configuration at runtime...")
+    def _create_directories(self) -> None:
+        """필요한 디렉토리들 생성"""
+        directories = [
+            self.config.paths.data_dir,
+            self.config.paths.processed_dir,
+            self.config.paths.vector_store_root,
+            self.config.paths.vector_store.embeddings,
+            self.config.paths.vector_store.faiss,
+            self.config.paths.vector_store.chromadb,
+            self.config.paths.vector_store.simple,
+            self.config.paths.cache_dir,
+            self.config.paths.embeddings_cache,
+            self.config.paths.query_cache,
+            self.config.paths.logs_dir,
+            self.config.system.temp_directory,
+        ]
 
-        # 중첩된 설정 업데이트 지원
-        config_dict = asdict(self.config)
+        created_count = 0
+        for directory in directories:
+            if directory:
+                Path(directory).mkdir(parents=True, exist_ok=True)
+                created_count += 1
 
-        def update_nested(base: Dict, updates: Dict, path: str = "") -> None:
-            for key, value in updates.items():
-                full_path = f"{path}.{key}" if path else key
+        logger.info(f"📁 Created/verified {created_count} directories")
 
-                if "." in key:
-                    # 중첩된 키 (예: "llm.temperature")
-                    parts = key.split(".", 1)
-                    section, sub_key = parts[0], parts[1]
-
-                    if section not in base:
-                        base[section] = {}
-
-                    update_nested(base[section], {sub_key: value}, section)
-                else:
-                    base[key] = value
-                    logger.info(f"   Updated {full_path} = {value}")
-
-        update_nested(config_dict, kwargs)
-
-        # 새로운 설정으로 교체
-        self.config = self._dict_to_config(config_dict)
-        self.config.config_source = ConfigSource.RUNTIME
-
-        # 업데이트된 설정 재검증
-        self._validate_config()
+    # ========================================================================
+    # Pipeline 호환 메서드들
+    # ========================================================================
 
     def get_llm_config(self) -> Dict[str, Any]:
-        """LLM 설정을 LangChain 호환 형태로 반환"""
-        if self.config.llm.provider == "huggingface_local":
-            return {
-                "model_path": self.config.llm.model_path,
-                "device_map": self.config.llm.device_map,
-                "torch_dtype": self.config.llm.torch_dtype,
-                "max_new_tokens": self.config.llm.max_new_tokens,
-                "temperature": self.config.llm.temperature,
-                "trust_remote_code": self.config.llm.trust_remote_code,
-                "load_in_8bit": self.config.llm.load_in_8bit,
-                "load_in_4bit": self.config.llm.load_in_4bit,
-            }
+        """LLM 설정 반환 (pipeline 호환)"""
         llm_config = {
-            "model": self.config.llm.model_name,
+            "provider": self.config.llm.provider,
             "temperature": self.config.llm.temperature,
-            "timeout": self.config.llm.timeout,
         }
 
-        if self.config.llm.api_key:
-            # 제공자별 API 키 설정
-            if self.config.llm.provider == "openai":
-                llm_config["openai_api_key"] = self.config.llm.api_key
-            elif self.config.llm.provider == "anthropic":
-                llm_config["anthropic_api_key"] = self.config.llm.api_key
-            # 환경 변수로도 설정 (LangChain이 자동으로 읽음)
-            if self.config.llm.provider == "openai":
-                os.environ["OPENAI_API_KEY"] = self.config.llm.api_key
-            elif self.config.llm.provider == "anthropic":
-                os.environ["ANTHROPIC_API_KEY"] = self.config.llm.api_key
-
-        if self.config.llm.api_base:
-            llm_config["base_url"] = self.config.llm.api_base
-
-        if self.config.llm.max_tokens:
-            llm_config["max_tokens"] = self.config.llm.max_tokens
+        # 프로바이더별 설정 추가
+        if self.config.llm.provider == "huggingface_local":
+            hf_config = asdict(self.config.llm.huggingface_local)
+            llm_config.update(hf_config)
+        elif self.config.llm.provider == "openai":
+            openai_config = asdict(self.config.llm.openai)
+            llm_config.update(openai_config)
 
         return llm_config
 
-    def get_retriever_config(self) -> Dict[str, Any]:
-        """리트리버 설정 반환"""
-        return {
-            "unified_graph_path": self.config.graph.unified_graph_path,
-            "vector_store_path": self.config.graph.vector_store_path,
-            "max_docs": self.config.qa.max_docs,
-            "min_relevance_score": self.config.qa.min_relevance_score,
-            "enable_caching": self.config.graph.cache_enabled,
-        }
-
-    def get_vector_store_config(
-        self, store_type: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """벡터 저장소 설정을 타입별로 반환 - YAML 중첩 구조 지원"""
-
-        if store_type is None:
-            store_type = self.config.vector_store.store_type
-
+    def get_vector_store_config(self) -> Dict[str, Any]:
+        """벡터 저장소 설정 반환"""
         base_config = {
-            "store_type": store_type,
+            "store_type": self.config.vector_store.store_type,
             "batch_size": self.config.vector_store.batch_size,
             "persist_directory": self.config.vector_store.persist_directory,
         }
 
-        if store_type == "faiss":
-            # YAML의 vector_store.faiss 섹션에서 설정 가져오기
-            faiss_config = getattr(self.config.vector_store, "faiss", {})
+        # 저장소 타입별 설정 추가
+        if self.config.vector_store.store_type == "faiss":
+            faiss_config = asdict(self.config.vector_store.faiss)
+            base_config.update(faiss_config)
+        elif self.config.vector_store.store_type == "chromadb":
+            chroma_config = asdict(self.config.vector_store.chromadb)
+            base_config.update(chroma_config)
 
-            # 딕셔너리인 경우와 객체인 경우 모두 처리
-            if isinstance(faiss_config, dict):
-                persist_dir = faiss_config.get(
-                    "persist_directory",
-                    self.config.vector_store.persist_directory + "/faiss",
-                )
-                index_type = faiss_config.get("index_type", "flat")
-                distance_metric = faiss_config.get("distance_metric", "cosine")
-                use_gpu = faiss_config.get("use_gpu", False)
-                gpu_id = faiss_config.get("gpu_id", 0)
-                gpu_memory_fraction = faiss_config.get("gpu_memory_fraction", 0.5)
-            else:
-                # 기본값 사용 (평면화되지 않은 경우)
-                persist_dir = getattr(
-                    self.config.vector_store,
-                    "faiss_directory",
-                    self.config.vector_store.persist_directory + "/faiss",
-                )
-                index_type = getattr(
-                    self.config.vector_store, "faiss_index_type", "flat"
-                )
-                distance_metric = getattr(
-                    self.config.vector_store, "faiss_distance_metric", "cosine"
-                )
-                use_gpu = getattr(self.config.vector_store, "use_gpu", False)
-                gpu_id = getattr(self.config.vector_store, "gpu_id", 0)
-                gpu_memory_fraction = getattr(
-                    self.config.vector_store, "gpu_memory_fraction", 0.5
-                )
+        return base_config
 
-            # 중복 경로 방지
-            if persist_dir.endswith("/faiss/faiss"):
-                persist_dir = persist_dir.replace("/faiss/faiss", "/faiss")
+    def get_embeddings_config(self) -> Dict[str, Any]:
+        """임베딩 설정 반환 (모든 model_type 지원)"""
 
+        # 기본 설정
+        base_config = {
+            "model_type": self.config.embeddings.model_type,
+            "save_directory": self.config.embeddings.save_directory,
+        }
+
+        # model_type에 따라 안전하게 설정 추가
+        if self.config.embeddings.model_type == "sentence-transformers":
+            # SentenceTransformers 설정
+            st_config = self.config.embeddings.sentence_transformers
             base_config.update(
                 {
-                    "persist_directory": persist_dir,
-                    "index_type": index_type,
-                    "distance_metric": distance_metric,
-                    "use_gpu": use_gpu,
-                    "gpu_id": gpu_id,
-                    "gpu_memory_fraction": gpu_memory_fraction,
+                    "model_name": st_config.model_name,
+                    "device": st_config.device,
+                    "batch_size": st_config.batch_size,
+                    "cache_dir": st_config.cache_dir,
+                    "max_length": 512,  # 기본값
+                    "sentence_transformers": asdict(st_config),
                 }
             )
 
-        elif store_type == "chromadb":
-            # YAML의 vector_store.chromadb 섹션에서 설정 가져오기
-            chromadb_config = getattr(self.config.vector_store, "chromadb", {})
-
-            if isinstance(chromadb_config, dict):
-                persist_dir = chromadb_config.get(
-                    "persist_directory",
-                    self.config.vector_store.persist_directory + "/chromadb",
-                )
-                collection_name = chromadb_config.get(
-                    "collection_name", "graphrag_embeddings"
-                )
-                distance_metric = chromadb_config.get("distance_metric", "cosine")
-            else:
-                # 기본값 사용
-                persist_dir = getattr(
-                    self.config.vector_store,
-                    "chromadb_directory",
-                    self.config.vector_store.persist_directory + "/chromadb",
-                )
-                collection_name = getattr(
-                    self.config.vector_store,
-                    "chromadb_collection_name",
-                    "graphrag_embeddings",
-                )
-                distance_metric = getattr(
-                    self.config.vector_store, "chromadb_distance_metric", "cosine"
-                )
-
-            # 중복 경로 방지
-            if persist_dir.endswith("/chromadb/chromadb"):
-                persist_dir = persist_dir.replace("/chromadb/chromadb", "/chromadb")
-
+        elif self.config.embeddings.model_type == "openai":
+            # OpenAI 임베딩 설정 (향후 확장용)
             base_config.update(
                 {
-                    "persist_directory": persist_dir,
-                    "collection_name": collection_name,
-                    "distance_metric": distance_metric,
+                    "model_name": "text-embedding-ada-002",  # OpenAI 기본값
+                    "device": "auto",
+                    "batch_size": 16,
+                    "cache_dir": "./cache/embeddings",
+                    "max_length": 8192,
                 }
             )
 
-        elif store_type == "simple":
-            # YAML의 vector_store.simple 섹션에서 설정 가져오기
-            simple_config = getattr(self.config.vector_store, "simple", {})
-
-            if isinstance(simple_config, dict):
-                persist_dir = simple_config.get(
-                    "persist_directory",
-                    self.config.vector_store.persist_directory + "/simple",
-                )
-            else:
-                # 기본값 사용
-                persist_dir = getattr(
-                    self.config.vector_store,
-                    "simple_directory",
-                    self.config.vector_store.persist_directory + "/simple",
-                )
-
-            # 중복 경로 방지
-            if persist_dir.endswith("/simple/simple"):
-                persist_dir = persist_dir.replace("/simple/simple", "/simple")
-
+        elif self.config.embeddings.model_type == "huggingface_api":
+            # HuggingFace API 임베딩 설정 (향후 확장용)
             base_config.update(
                 {
-                    "persist_directory": persist_dir,
+                    "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+                    "device": "auto",
+                    "batch_size": 32,
+                    "cache_dir": "./cache/embeddings",
+                    "max_length": 512,
+                }
+            )
+
+        else:
+            # 기본값 (안전장치)
+            logger.warning(
+                f"⚠️ Unknown model_type: {self.config.embeddings.model_type}, using defaults"
+            )
+            base_config.update(
+                {
+                    "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+                    "device": "auto",
+                    "batch_size": 32,
+                    "cache_dir": "./cache/embeddings",
+                    "max_length": 512,
                 }
             )
 
         return base_config
 
-    def get_embeddings_config(self) -> Dict[str, Any]:
-        """임베딩 설정 반환 (저장 경로 포함)"""
-        return {
-            "model_name": self.config.embedding.model_name,
-            "device": self.config.embedding.device,
-            "batch_size": self.config.embedding.batch_size,
-            "max_length": self.config.embedding.max_length,
-            "cache_dir": self.config.embedding.cache_dir,
-            "save_directory": self.config.embedding.save_directory,
-            "model_type": self.config.embedding.model_type,
-        }
-
-    def get_all_directories(self) -> List[str]:
-        """생성해야 할 모든 디렉토리 목록 반환"""
-        return [
-            self.config.paths.data_dir,
-            self.config.paths.processed_dir,
-            self.config.paths.vector_store_root,
-            self.config.paths.vector_store_embeddings,
-            self.config.paths.vector_store_faiss,
-            self.config.paths.vector_store_chromadb,
-            self.config.paths.vector_store_simple,
-            self.config.paths.cache_dir,
-            self.config.paths.embeddings_cache,
-            self.config.paths.query_cache,
-            self.config.paths.logs_dir,
-        ]
-
-    def create_directories(self) -> None:
-        """필요한 디렉토리들 생성"""
-        from pathlib import Path
-
-        directories = self.get_all_directories()
-
-        for directory in directories:
-            if directory:  # 빈 문자열 체크
-                Path(directory).mkdir(parents=True, exist_ok=True)
-                logger.debug(f"📁 Created directory: {directory}")
-
-        logger.info(f"✅ Created {len(directories)} directories")
-
-    def save_config(self, file_path: Optional[str] = None) -> None:
-        """현재 설정을 파일로 저장"""
-
-        output_path = Path(file_path) if file_path else self.config_file
-        if not output_path:
-            output_path = Path("graphrag_config.yaml")
-
-        config_dict = asdict(self.config)
-
-        # 민감한 정보 제거 (저장시)
-        if "llm" in config_dict and "api_key" in config_dict["llm"]:
-            config_dict["llm"]["api_key"] = "***REDACTED***"
-
-        logger.info(f"💾 Saving config to: {output_path}")
-
-        try:
-            with open(output_path, "w", encoding="utf-8") as f:
-                if output_path.suffix.lower() in [".yml", ".yaml"]:
-                    yaml.dump(config_dict, f, default_flow_style=False, indent=2)
-                else:
-                    json.dump(config_dict, f, indent=2)
-
-            logger.info("✅ Config saved successfully")
-
-        except Exception as e:
-            logger.error(f"❌ Failed to save config: {e}")
-            raise
+    def get_paths_config(self) -> Dict[str, Any]:
+        """경로 설정 반환"""
+        return asdict(self.config.paths)
 
     def get_config_summary(self) -> str:
-        """설정 요약 정보 반환"""
+        """설정 요약 정보"""
+        summary = f"""
+GraphRAG Configuration Summary (Complete Version):
+================================================
+LLM Provider: {self.config.llm.provider}
+Model Path: {getattr(self.config.llm.huggingface_local, 'model_path', 'N/A')}
+Vector Store: {self.config.vector_store.store_type}
+Embeddings Model: {getattr(self.config.embeddings.sentence_transformers, 'model_name', 'N/A')}
+Log Level: {self.config.logging.level} (System: {self.config.system.log_level})
+Verbose: {self.config.system.verbose}
+Max Workers: {self.config.performance.max_workers}
+Data Directory: {self.config.paths.data_dir}
+Vector Store Root: {self.config.paths.vector_store_root}
+"""
+        return summary.strip()
 
-        summary = [
-            f"GraphRAG Configuration Summary",
-            f"================================",
-            f"LLM: {self.config.llm.provider} / {self.config.llm.model_name}",
-            f"API Key: {'✅ Set' if self.config.llm.api_key else '❌ Missing'}",
-            f"Embedding Model: {self.config.embedding.model_name}",
-            f"Graph Path: {self.config.graph.unified_graph_path or 'Not set'}",
-            f"Vector Store: {self.config.graph.vector_store_path or 'Not set'}",
-            f"Log Level: {self.config.system.log_level}",
-            f"Config Source: {self.config.config_source.name}",
-        ]
+    def get_embedding_config(self) -> Dict[str, Any]:
+        """임베딩 설정 반환 (pipeline 호환성)"""
+        return {
+            "model_name": self.config.embeddings.sentence_transformers.model_name,
+            "device": self.config.embeddings.sentence_transformers.device,
+            "batch_size": self.config.embeddings.sentence_transformers.batch_size,
+            "save_directory": self.config.embeddings.save_directory,
+            "cache_dir": self.config.embeddings.sentence_transformers.cache_dir,
+        }
 
-        return "\n".join(summary)
+    def get_system_config(self) -> Dict[str, Any]:
+        """시스템 설정 반환 (pipeline 호환성)"""
+        return asdict(self.config.system)
+
+    def get_graph_config(self) -> Dict[str, Any]:
+        """그래프 설정 반환 (pipeline 호환성)"""
+        return asdict(self.config.graph)
+
+    def get_qa_config(self) -> Dict[str, Any]:
+        """QA 설정 반환 (pipeline 호환성)"""
+        return asdict(self.config.qa)
 
 
-# 편의 함수들
-def load_config(
+# ============================================================================
+# 팩토리 및 테스트 함수들
+# ============================================================================
+
+
+def create_config_manager(
     config_file: Optional[str] = None, env_file: Optional[str] = None
 ) -> GraphRAGConfigManager:
-    """설정 매니저 생성 및 로딩"""
+    """설정 관리자 팩토리 함수"""
     return GraphRAGConfigManager(config_file=config_file, env_file=env_file)
 
 
-def create_sample_config(file_path: str = "graphrag_config.yaml") -> None:
-    """샘플 설정 파일 생성"""
-
-    sample_config = {
-        "llm": {
-            # 🆕 로컬 모델 설정 예시 추가
-            "provider": "huggingface_local",  # 또는 "openai", "anthropic"
-            "model_path": "/DATA/MODELS/models--meta-llama--Llama-3.1-8B-Instruct",
-            "device_map": "auto",
-            "torch_dtype": "bfloat16",
-            "temperature": 0.1,
-            "max_new_tokens": 2048,
-            # API 기반 대안 설정
-            # "provider": "openai",
-            # "model_name": "gpt-4",
-            # "api_key": "${OPENAI_API_KEY}",
-        },
-        "embedding": {"model_name": "auto", "device": "auto", "batch_size": 32},
-        "graph": {
-            "unified_graph_path": "./graphs/unified/unified_knowledge_graph.json",
-            "vector_store_path": "./graphs/embeddings",
-            "cache_enabled": True,
-        },
-        "qa": {
-            "chain_type": "retrieval_qa",
-            "max_docs": 10,
-            "min_relevance_score": 0.3,
-            "enable_memory": False,
-        },
-        "system": {"log_level": "INFO", "verbose": False, "max_workers": 4},
-    }
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        yaml.dump(sample_config, f, default_flow_style=False, indent=2)
-
-    print(f"✅ Sample config created: {file_path}")
-
-
 def main():
-    """ConfigManager 테스트"""
+    """완전한 설정 관리자 테스트"""
 
-    print("🧪 Testing GraphRAGConfigManager...")
+    print("🧪 Testing Complete Config Manager (1단계+2단계)...")
 
     try:
-        # 1. 기본 설정으로 초기화
+        # 설정 관리자 초기화
         config_manager = GraphRAGConfigManager(auto_load=False)
-        print("✅ Basic initialization successful")
+        print("✅ Basic initialization")
 
-        # 2. 설정 업데이트
-        config_manager.update_config(
-            **{
-                "llm.temperature": 0.2,
-                "llm.model_name": "gpt-4",
-                "qa.max_docs": 15,
-                "system.verbose": True,
-            }
+        # 설정 로딩
+        config_manager.load_all()
+        print("✅ Configuration loading")
+
+        # 중첩 구조 접근 테스트
+        print(f"✅ LLM Provider: {config_manager.config.llm.provider}")
+        print(
+            f"✅ Model Path: {config_manager.config.llm.huggingface_local.model_path}"
         )
-        print("✅ Configuration update successful")
+        print(f"✅ Vector Store: {config_manager.config.vector_store.store_type}")
+        print(
+            f"✅ FAISS Dir: {config_manager.config.vector_store.faiss.persist_directory}"
+        )
 
-        # 3. LLM 설정 조회
+        # Pipeline 호환 메서드 테스트
         llm_config = config_manager.get_llm_config()
-        print(f"🤖 LLM Config: {llm_config}")
+        print(f"✅ Pipeline LLM Config: {llm_config.get('provider')}")
 
-        # 4. 설정 요약
+        vector_config = config_manager.get_vector_store_config()
+        print(f"✅ Pipeline Vector Config: {vector_config.get('store_type')}")
+
+        # 설정 요약
         print(f"\n📋 Configuration Summary:")
         print(config_manager.get_config_summary())
 
-        # 5. 샘플 설정 파일 생성
-        create_sample_config("test_config.yaml")
-
-        print(f"\n✅ GraphRAGConfigManager test completed!")
+        print(f"\n✅ Complete config manager test completed!")
 
     except Exception as e:
         print(f"❌ Test failed: {e}")
