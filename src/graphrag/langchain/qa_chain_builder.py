@@ -1057,7 +1057,7 @@ def replace_pipeline_llm_with_qa_chain(
 def validate_qa_chain_integration(
     config_manager: "GraphRAGConfigManager",
 ) -> Dict[str, Any]:
-    """QA Chain 통합 검증"""
+    """QA Chain 통합 검증 - HuggingFace ID 지원"""
 
     validation_result = {
         "status": "unknown",
@@ -1096,7 +1096,7 @@ def validate_qa_chain_integration(
                     "Run embedding generation first"
                 )
 
-            # 3. LLM 설정 검증
+            # 3. LLM 설정 검증 (수정된 부분)
             try:
                 llm_config = config_manager.get_llm_config()
                 validation_result["checks"]["llm_config_valid"] = True
@@ -1104,32 +1104,74 @@ def validate_qa_chain_integration(
 
                 if llm_config.get("provider") == "huggingface_local":
                     model_path = llm_config.get("model_path")
-                    if model_path and not Path(model_path).exists():
-                        validation_result["recommendations"].append(
-                            f"Model path not found: {model_path}. Check YAML configuration."
-                        )
+
+                    # ✅ HuggingFace ID vs 로컬 경로 구분
+                    if model_path:
+                        # HuggingFace ID 패턴 (org/model-name)
+                        if "/" in model_path and not model_path.startswith("/"):
+                            validation_result["checks"][
+                                "model_source"
+                            ] = "huggingface_hub"
+                            validation_result["checks"]["model_id"] = model_path
+                            logger.info(f"✅ Using HuggingFace model ID: {model_path}")
+                        else:
+                            # 로컬 경로
+                            validation_result["checks"]["model_source"] = "local_path"
+                            if not Path(model_path).exists():
+                                validation_result["errors"].append(
+                                    f"Local model path not found: {model_path}"
+                                )
+                                validation_result["recommendations"].append(
+                                    f"Download model to {model_path} or use HuggingFace ID"
+                                )
+                            else:
+                                validation_result["checks"]["local_model_exists"] = True
 
             except Exception as e:
                 validation_result["checks"]["llm_config_valid"] = False
                 validation_result["errors"].append(f"LLM config error: {e}")
 
-            # 4. 의존성 검증
-            validation_result["checks"]["langchain_available"] = _langchain_available
+            # 4. 의존성 검증 (더 정확한 체크)
+            try:
+                import langchain_core
+                import langchain
 
-            if not _langchain_available:
+                validation_result["checks"]["langchain_available"] = True
+                validation_result["checks"]["langchain_version"] = langchain.__version__
+            except ImportError:
+                validation_result["checks"]["langchain_available"] = False
                 validation_result["errors"].append("LangChain not available")
                 validation_result["recommendations"].append(
-                    "Install LangChain: pip install langchain"
+                    "Install LangChain: pip install langchain langchain-core"
                 )
 
-        # 5. 전체 상태 결정
+        # 5. 전체 상태 결정 (수정된 로직)
         error_count = len(validation_result["errors"])
-        if error_count == 0:
+
+        # 중요한 에러와 경고 구분
+        critical_errors = []
+        for error in validation_result["errors"]:
+            if "not found" in error and "graph" in error:
+                critical_errors.append(error)
+            elif "LangChain not available" in error:
+                critical_errors.append(error)
+
+        if len(critical_errors) == 0:
             validation_result["status"] = "ready"
-        elif error_count <= 2:
+        elif len(critical_errors) <= 1:
             validation_result["status"] = "partial"
         else:
             validation_result["status"] = "not_ready"
+
+        # 상태별 메시지 추가
+        if validation_result["status"] == "ready":
+            validation_result["message"] = (
+                "All components ready for QA Chain integration"
+            )
+        elif validation_result["status"] == "partial":
+            validation_result["message"] = "QA Chain can work with some limitations"
+        else:
+            validation_result["message"] = "Critical components missing"
 
     except Exception as e:
         validation_result["status"] = "error"
