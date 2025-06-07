@@ -88,8 +88,8 @@ class GraphRAGRetriever(BaseRetriever):
     cache_ttl_seconds: int = Field(default=3600, description="캐시 유지 시간(초)")
 
     # 내부 캐시 저장소
-    _query_cache: Dict[str, Document] = Field(default_factory=dict, exclude=True)
-    _cache_timestamps: Dict[str, float] = Field(default_factory=dict, exclude=True)
+    query_cache: Dict[str, Document] = Field(default_factory=dict, exclude=True)
+    cache_timestamps: Dict[str, float] = Field(default_factory=dict, exclude=True)
 
     class Config:
         """Pydantic 설정"""
@@ -99,8 +99,8 @@ class GraphRAGRetriever(BaseRetriever):
             "query_analyzer",
             "subgraph_extractor",
             "context_serializer",
-            "_query_cache",
-            "_cache_timestamps",
+            "query_cache",
+            "cache_timestamps",
         }
 
     def __init__(self, **kwargs):
@@ -381,18 +381,18 @@ class GraphRAGRetriever(BaseRetriever):
 
         cache_key = self._get_cache_key(query)
 
-        if cache_key in self._query_cache:
+        if cache_key in self.query_cache:
             # TTL 확인
             import time
 
-            cache_time = self._cache_timestamps.get(cache_key, 0)
+            cache_time = self.cache_timestamps.get(cache_key, 0)
 
             if time.time() - cache_time < self.cache_ttl_seconds:
-                return self._query_cache[cache_key]
+                return self.query_cache[cache_key]
             else:
                 # 만료된 캐시 제거
-                del self._query_cache[cache_key]
-                del self._cache_timestamps[cache_key]
+                del self.query_cache[cache_key]
+                del self.cache_timestamps[cache_key]
 
         return None
 
@@ -405,27 +405,27 @@ class GraphRAGRetriever(BaseRetriever):
 
         import time
 
-        self._query_cache[cache_key] = documents
-        self._cache_timestamps[cache_key] = time.time()
+        self.query_cache[cache_key] = documents
+        self.cache_timestamps[cache_key] = time.time()
 
         # 캐시 크기 제한 (최대 100개)
-        if len(self._query_cache) > 100:
+        if len(self.query_cache) > 100:
             # 가장 오래된 캐시 제거
-            oldest_key = min(self._cache_timestamps, key=self._cache_timestamps.get)
-            del self._query_cache[oldest_key]
-            del self._cache_timestamps[oldest_key]
+            oldest_key = min(self.cache_timestamps, key=self.cache_timestamps.get)
+            del self.query_cache[oldest_key]
+            del self.cache_timestamps[oldest_key]
 
     def clear_cache(self) -> None:
         """캐시 초기화"""
-        self._query_cache.clear()
-        self._cache_timestamps.clear()
+        self.query_cache.clear()
+        self.cache_timestamps.clear()
         logger.info("🗑️ Cache cleared")
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """캐시 통계 반환"""
         return {
-            "cached_queries": len(self._query_cache),
-            "cache_size_mb": sum(len(str(docs)) for docs in self._query_cache.values())
+            "cached_queries": len(self.query_cache),
+            "cache_size_mb": sum(len(str(docs)) for docs in self.query_cache.values())
             / 1024
             / 1024,
             "cache_hit_ratio": getattr(self, "_cache_hits", 0)

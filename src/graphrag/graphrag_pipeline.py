@@ -50,9 +50,21 @@ try:
 except ImportError:
     _transformers_available = False
     warnings.warn("Transformers not available. Local LLM will not work.")
-
 # 로깅 설정
 logger = logging.getLogger(__name__)
+
+try:
+    from .langchain.qa_chain_builder import (
+        create_qa_chain_from_pipeline,
+        replace_pipeline_llm_with_qa_chain,
+        validate_qa_chain_integration,
+    )
+
+    _qa_chain_available = True
+    logger.info("✅ QA Chain integration available")
+except ImportError as e:
+    _qa_chain_available = False
+    logger.warning(f"⚠️ QA Chain not available: {e}")
 
 
 class PipelineStatus(Enum):
@@ -349,6 +361,69 @@ class GraphRAGPipeline:
         if auto_setup:
             self.setup()
 
+    def enable_qa_chain_optimization(self) -> None:
+        """QA Chain 최적화 활성화 (기존 ask 메서드 교체)"""
+
+        if not _qa_chain_available:
+            logger.warning("⚠️ QA Chain not available, keeping original ask method")
+            return
+
+        if not hasattr(self, "_original_ask"):
+            logger.info("🚀 Enabling QA Chain optimization...")
+
+            # 원본 메서드 백업
+            self._original_ask = self.ask
+
+            try:
+                # QA Chain으로 교체
+                optimized_pipeline = replace_pipeline_llm_with_qa_chain(self)
+                self.ask = optimized_pipeline.ask
+                self._qa_chain = getattr(optimized_pipeline, "_qa_chain", None)
+
+                logger.info("✅ QA Chain optimization enabled successfully")
+                logger.info(
+                    "💡 Use pipeline.ask() as usual - now with LangChain optimization!"
+                )
+
+            except Exception as e:
+                logger.error(f"❌ Failed to enable QA Chain optimization: {e}")
+                logger.info("🔄 Keeping original ask method")
+
+    def disable_qa_chain_optimization(self) -> None:
+        """QA Chain 최적화 비활성화 (원본 ask 메서드 복원)"""
+
+        if hasattr(self, "_original_ask"):
+            logger.info("🔄 Disabling QA Chain optimization...")
+            self.ask = self._original_ask
+            delattr(self, "_original_ask")
+            if hasattr(self, "_qa_chain"):
+                delattr(self, "_qa_chain")
+            logger.info("✅ Original ask method restored")
+        else:
+            logger.info("ℹ️ QA Chain optimization not currently enabled")
+
+    def get_qa_chain_stats(self) -> Optional[Dict[str, Any]]:
+        """QA Chain 사용 통계 조회"""
+
+        if hasattr(self, "_qa_chain") and self._qa_chain:
+            try:
+                return self._qa_chain._llm.get_usage_stats()
+            except Exception as e:
+                logger.warning(f"⚠️ Could not get QA Chain stats: {e}")
+
+        return None
+
+    def validate_qa_chain_integration(self) -> Dict[str, Any]:
+        """QA Chain 통합 가능성 검증"""
+
+        if not _qa_chain_available:
+            return {
+                "status": "not_available",
+                "reason": "QA Chain components not imported",
+            }
+
+        return validate_qa_chain_integration(self.config_manager)
+
     def setup(self) -> None:
         """시스템 전체 초기화"""
         logger.info("🔧 Setting up GraphRAG Pipeline...")
@@ -372,7 +447,10 @@ class GraphRAGPipeline:
             # 5. LLM 관리자 초기화 (지연 로딩)
             self._setup_llm_manager()
 
-            # 6. 시스템 상태 업데이트
+            # 6. QA Chain 최적화 확인 (새로 추가)
+            self._check_qa_chain_availability()
+
+            # 7. 시스템 상태 업데이트 (기존 #6을 #7로 변경)
             self.state.initialization_time = time.time() - start_time
             self.state.status = PipelineStatus.READY
             self.state.last_error = None
@@ -386,6 +464,46 @@ class GraphRAGPipeline:
             self.state.last_error = str(e)
             logger.error(f"❌ Pipeline setup failed: {e}")
             raise
+
+    def _check_qa_chain_availability(self) -> None:
+        """QA Chain 최적화 가용성 확인 (새로 추가할 메서드)"""
+        logger.info("🔍 Checking QA Chain optimization availability...")
+
+        if _qa_chain_available:
+            try:
+                validation = self.validate_qa_chain_integration()
+                status = validation.get("status", "unknown")
+
+                if status == "ready":
+                    logger.info("🎯 QA Chain optimization ready for activation")
+                    logger.info(
+                        "💡 Call pipeline.enable_qa_chain_optimization() to activate"
+                    )
+                    self.state.components_loaded["qa_chain_ready"] = True
+                elif status == "partial":
+                    logger.info(
+                        "⚠️ QA Chain partially available - some components missing"
+                    )
+                    self.state.components_loaded["qa_chain_ready"] = False
+
+                    # 권장사항 출력
+                    recommendations = validation.get("recommendations", [])
+                    if recommendations:
+                        logger.info("📋 Recommendations:")
+                        for rec in recommendations[:3]:  # 최대 3개만
+                            logger.info(f"   • {rec}")
+                else:
+                    logger.info(f"ℹ️ QA Chain integration status: {status}")
+                    self.state.components_loaded["qa_chain_ready"] = False
+
+            except Exception as e:
+                logger.debug(f"QA Chain validation failed: {e}")
+                self.state.components_loaded["qa_chain_ready"] = False
+        else:
+            logger.info(
+                "ℹ️ QA Chain optimization not available (components not imported)"
+            )
+            self.state.components_loaded["qa_chain_ready"] = False
 
     def _setup_config_manager(self) -> None:
         """설정 관리자 초기화"""
@@ -440,88 +558,6 @@ class GraphRAGPipeline:
             logger.warning("⚠️ No local LLM configuration found")
             self.state.components_loaded["llm_manager"] = False
 
-    # def _ensure_embeddings_loaded(self) -> None:
-    #     """임베딩 시스템 로드 확인 - 벡터 저장소 연동 개선"""
-    #     if self.embeddings_loaded:
-    #         return
-
-    #     logger.info("📥 Loading embeddings system...")
-
-    #     # 설정 가져오기
-    #     config = self.config_manager.config
-
-    #     # 통합 그래프 파일 확인
-    #     unified_graph_path = config.graph.unified_graph_path
-    #     if not Path(unified_graph_path).exists():
-    #         raise FileNotFoundError(f"Unified graph not found: {unified_graph_path}")
-
-    #     # 벡터 저장소 경로 확인
-    #     vector_store_root = config.graph.vector_store_path
-    #     if not Path(vector_store_root).exists():
-    #         logger.warning(f"Vector store root not found: {vector_store_root}")
-    #         logger.info("💡 Run build_embeddings() first to create vector store")
-    #         return
-
-    #     # 벡터 저장소 설정 가져오기
-    #     vector_store_config = self.config_manager.get_vector_store_config()
-    #     store_directory = vector_store_config["persist_directory"]
-
-    #     logger.info(f"📂 Vector store directory: {store_directory}")
-    #     logger.info(f"📂 Store type: {vector_store_config['store_type']}")
-
-    #     # 벡터 저장소 로드 또는 생성
-    #     try:
-    #         from .embeddings.vector_store_manager import create_vector_store_from_config
-
-    #         self.vector_store = create_vector_store_from_config(
-    #             config_manager=self.config_manager
-    #         )
-
-    #         # 벡터 저장소가 비어있으면 임베딩에서 로드 시도
-    #         if self.vector_store.store.total_vectors == 0:
-    #             embeddings_dir = config.paths.vector_store.embeddings
-
-    #             if (
-    #                 Path(embeddings_dir).exists()
-    #                 and (Path(embeddings_dir) / "embeddings.npy").exists()
-    #             ):
-    #                 logger.info("🔄 Loading from saved embeddings...")
-    #                 self.vector_store.load_from_saved_embeddings(vector_store_root)
-    #             else:
-    #                 logger.warning(f"No vector data found in: {store_directory}")
-    #                 logger.warning(f"No embeddings found in: {embeddings_dir}")
-    #                 logger.info("💡 Run build_embeddings() first")
-    #                 return
-
-    #         logger.info(
-    #             f"✅ Vector store loaded: {self.vector_store.store.total_vectors:,} vectors"
-    #         )
-
-    #         # SubgraphExtractor 초기화 - VectorStoreManager 인스턴스 직접 전달
-    #         self.subgraph_extractor = SubgraphExtractor(
-    #             unified_graph_path=unified_graph_path,
-    #             vector_store_path=store_directory,  # 경로만 전달
-    #             embedding_model=config.embeddings.model_name,
-    #             device=config.embeddings.device,
-    #         )
-
-    #         # SubgraphExtractor의 벡터 저장소를 수동으로 설정
-    #         self.subgraph_extractor.vector_store = self.vector_store
-
-    #         self.embeddings_loaded = True
-    #         logger.info("✅ Embeddings system loaded successfully")
-
-    #     except Exception as e:
-    #         logger.error(f"❌ Failed to load embeddings system: {e}")
-    #         logger.error(f"   Store directory: {store_directory}")
-    #         logger.error(f"   Store exists: {Path(store_directory).exists()}")
-
-    #         # 디버깅 정보
-    #         if Path(store_directory).exists():
-    #             files = list(Path(store_directory).glob("*"))
-    #             logger.error(f"   Files in store: {[f.name for f in files]}")
-
-    #         raise
     def _ensure_embeddings_loaded(self) -> None:
         """임베딩 시스템 로드 확인 - 모든 model_type 지원"""
         if self.embeddings_loaded:
@@ -945,12 +981,20 @@ class GraphRAGPipeline:
             status["llm_loaded"] = self.llm_manager.is_loaded
             status["llm_model_path"] = self.llm_manager.config.get("model_path")
 
+        # QA Chain 상태 추가
+        status["qa_chain"] = {
+            "available": _qa_chain_available,
+            "enabled": hasattr(self, "_qa_chain"),
+            "ready": self.state.components_loaded.get("qa_chain_ready", False),
+            "stats": self.get_qa_chain_stats(),
+        }
         return status
 
     def setup_from_config(
         self,
         config_file: str = "graphrag_config.yaml",
         auto_build_embeddings: bool = False,
+        enable_qa_chain: bool = True,  # 새 파라미터 추가
     ) -> Dict[str, Any]:
         """설정 파일로부터 완전 자동 설정"""
 
@@ -983,11 +1027,37 @@ class GraphRAGPipeline:
                 setup_result["embeddings_built"] = False
                 setup_result["embedding_error"] = str(e)
 
+        # QA Chain 자동 활성화 (새로 추가)
+        if enable_qa_chain:
+            try:
+                logger.info("🔗 Attempting to enable QA Chain optimization...")
+                self.enable_qa_chain_optimization()
+                setup_result["qa_chain_enabled"] = True
+                setup_result["qa_chain_stats"] = self.get_qa_chain_stats()
+                logger.info("✅ QA Chain optimization enabled successfully")
+            except Exception as e:
+                logger.warning(f"⚠️ QA Chain auto-enable failed: {e}")
+                setup_result["qa_chain_enabled"] = False
+                setup_result["qa_chain_error"] = str(e)
+
+                # QA Chain이 실패해도 시스템은 정상 동작
+                logger.info("ℹ️ Pipeline will continue with standard LLM method")
+        else:
+            setup_result["qa_chain_enabled"] = False
+            logger.info("ℹ️ QA Chain optimization skipped (enable_qa_chain=False)")
+
         # 시스템 상태 확인
         status = self.get_system_status()
         setup_result["system_status"] = status
 
         logger.info("✅ GraphRAG setup completed!")
+
+        # 최종 상태 요약 출력
+        if setup_result.get("qa_chain_enabled"):
+            logger.info("🚀 Pipeline ready with QA Chain optimization")
+        else:
+            logger.info("📝 Pipeline ready with standard LLM method")
+
         return setup_result
 
     def rebuild_vector_store(
@@ -1133,8 +1203,8 @@ def create_graphrag_pipeline(
 
 
 def main():
-    """GraphRAG Pipeline 테스트"""
-    print("🧪 Testing GraphRAG Pipeline...")
+    """GraphRAG Pipeline 테스트 - QA Chain 최적화 전용"""
+    print("🧪 Testing GraphRAG Pipeline with QA Chain optimization...")
 
     try:
         # 1. 파이프라인 초기화
@@ -1144,7 +1214,13 @@ def main():
         status = pipeline.get_system_status()
         print(f"📊 System Status:")
         print(f"   Pipeline: {status['pipeline_state']['status']}")
-        print(f"   Components: {status['components']}")
+
+        # QA Chain 상태 확인
+        if "qa_chain" in status:
+            qa_status = status["qa_chain"]
+            print(f"   QA Chain Available: {qa_status['available']}")
+            print(f"   QA Chain Ready: {qa_status['ready']}")
+            print(f"   QA Chain Enabled: {qa_status['enabled']}")
 
         # 3. 임베딩 구축 (필요한 경우)
         if not status["embeddings_loaded"]:
@@ -1152,40 +1228,196 @@ def main():
             build_result = pipeline.build_embeddings()
             print(f"✅ Built {build_result['total_embeddings']} embeddings")
 
-        # 4. 테스트 질문
-        test_queries = [
-            "배터리 SoC 예측에 사용된 머신러닝 기법들은?",
-            "AI 및 머신러닝 기법이 적용된 주요 task는 무엇인가요?"
-            "배터리 전극 공정에서 AI가 적용될 수 있는 부분은 무엇이 있을까요?",
-        ]
+        # 4. QA Chain 준비 상태 검증
+        print(f"\n🔍 Validating QA Chain integration...")
+        validation = pipeline.validate_qa_chain_integration()
+        print(f"   Status: {validation.get('status', 'unknown')}")
 
-        print(f"\n❓ Testing queries...")
-        for i, query in enumerate(test_queries[:1]):  # 첫 번째만 테스트
-            print(f"\n{i+1}. {query}")
+        if validation.get("recommendations"):
+            print(f"   Recommendations:")
+            for rec in validation["recommendations"][:3]:
+                print(f"      • {rec}")
 
-            result = pipeline.ask(query, return_context=True)
+        # 5. QA Chain 활성화 (바로 시작)
+        if validation.get("status") == "ready":
+            print(f"\n🚀 Activating QA Chain optimization...")
 
-            print(f"✅ Answer: {result.answer[:200]}...")
-            print(
-                f"📊 Stats: {result.processing_time:.2f}s, {result.confidence_score:.3f} confidence"
-            )
-            print(f"📄 Sources: {len(result.source_nodes)} nodes")
+            try:
+                pipeline.enable_qa_chain_optimization()
+                print(f"✅ QA Chain optimization activated!")
 
-        # 5. 최종 상태
+                # 6. 테스트 질문들
+                test_queries = [
+                    "배터리 SoC 예측에 사용된 머신러닝 기법들은?",
+                    "AI 및 머신러닝 기법이 적용된 주요 task는 무엇인가요?",
+                    "배터리 전극 공정에서 AI가 적용될 수 있는 부분은 무엇이 있을까요?",
+                ]
+
+                print(f"\n❓ Testing with QA CHAIN optimization...")
+
+                for i, query in enumerate(test_queries[:2]):  # 2개 질문 테스트
+                    print(f"\n{i+1}. {query}")
+
+                    start_time = time.time()
+                    result = pipeline.ask(query, return_context=True)
+                    response_time = time.time() - start_time
+
+                    print(f"✅ Answer: {result.answer[:300]}...")
+                    print(f"📊 Response time: {response_time:.2f}s")
+                    print(f"📊 Confidence: {result.confidence_score:.3f}")
+                    print(f"📄 Sources: {len(result.source_nodes)} nodes")
+
+                    # 첫 번째 질문 후 캐시 효과 확인
+                    if i == 0:
+                        print(f"\n🔄 Testing cache effect - same question again...")
+                        cache_start = time.time()
+                        cache_result = pipeline.ask(query, return_context=True)
+                        cache_time = time.time() - cache_start
+
+                        speedup = (
+                            response_time / cache_time
+                            if cache_time > 0
+                            else float("inf")
+                        )
+                        print(f"📊 Cache response time: {cache_time:.2f}s")
+                        print(f"🚀 Speedup: {speedup:.1f}x faster")
+
+                # 7. QA Chain 통계
+                qa_stats = pipeline.get_qa_chain_stats()
+                if qa_stats:
+                    print(f"\n📊 QA Chain Statistics:")
+                    print(f"   Total calls: {qa_stats.get('total_calls', 0)}")
+                    print(f"   Cache hits: {qa_stats.get('cache_hits', 0)}")
+                    print(
+                        f"   Cache hit ratio: {qa_stats.get('cache_hit_ratio', 0):.2%}"
+                    )
+                    print(
+                        f"   Average response time: {qa_stats.get('average_time', 0):.2f}s"
+                    )
+                    print(f"   Success rate: {qa_stats.get('success_rate', 0):.2%}")
+                    print(f"   Failed calls: {qa_stats.get('failed_calls', 0)}")
+
+                # 8. LLM 어댑터 상태 확인
+                if hasattr(pipeline, "_qa_chain") and pipeline._qa_chain:
+                    try:
+                        llm_info = pipeline._qa_chain._llm.get_model_info()
+                        print(f"\n🤖 LLM Adapter Info:")
+                        print(f"   Model path: {llm_info.get('model_path', 'unknown')}")
+                        print(f"   Adapter mode: {llm_info.get('mode', 'unknown')}")
+                        print(
+                            f"   Temperature: {llm_info.get('temperature', 'unknown')}"
+                        )
+                        print(f"   Max tokens: {llm_info.get('max_tokens', 'unknown')}")
+                        print(
+                            f"   Caching enabled: {llm_info.get('caching_enabled', 'unknown')}"
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Could not get LLM adapter info: {e}")
+
+                print(f"\n✅ QA Chain optimization test completed successfully!")
+
+            except Exception as e:
+                print(f"❌ QA Chain optimization failed: {e}")
+                print(f"🔄 Error details:")
+                import traceback
+
+                traceback.print_exc()
+
+        else:
+            print(f"\n❌ QA Chain not ready for testing")
+            print(f"   Status: {validation.get('status')}")
+            print(f"   Reason: {validation.get('reason', 'Unknown')}")
+
+            if validation.get("recommendations"):
+                print(f"   Please address these issues:")
+                for rec in validation["recommendations"]:
+                    print(f"      • {rec}")
+
+            return
+
+        # 9. 최종 상태
         final_status = pipeline.get_system_status()
-        print(f"\n📈 Final Stats:")
+        print(f"\n📈 Final System State:")
         print(
-            f"   Queries processed: {final_status['pipeline_state']['total_queries_processed']}"
+            f"   Total queries processed: {final_status['pipeline_state']['total_queries_processed']}"
         )
-        print(f"   Cache size: {final_status['cache_size']}")
 
-        print(f"\n✅ GraphRAG Pipeline test completed!")
+        # QA Chain 최종 상태
+        if "qa_chain" in final_status:
+            qa_final = final_status["qa_chain"]
+            print(f"   QA Chain enabled: {qa_final['enabled']}")
+            if qa_final["enabled"] and qa_final["stats"]:
+                print(
+                    f"   QA Chain total calls: {qa_final['stats'].get('total_calls', 0)}"
+                )
+
+        # 사용 가이드
+        print(f"\n💡 QA Chain is now active! Usage:")
+        print(f"   • Continue using: pipeline.ask('your question')")
+        print(f"   • Check stats: pipeline.get_qa_chain_stats()")
+        print(f"   • Disable if needed: pipeline.disable_qa_chain_optimization()")
 
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
 
         traceback.print_exc()
+
+
+# def main():
+#     """GraphRAG Pipeline 테스트"""
+#     print("🧪 Testing GraphRAG Pipeline...")
+
+#     try:
+#         # 1. 파이프라인 초기화
+#         pipeline = GraphRAGPipeline(config_file="graphrag_config.yaml", auto_setup=True)
+
+#         # 2. 시스템 상태 확인
+#         status = pipeline.get_system_status()
+#         print(f"📊 System Status:")
+#         print(f"   Pipeline: {status['pipeline_state']['status']}")
+#         print(f"   Components: {status['components']}")
+
+#         # 3. 임베딩 구축 (필요한 경우)
+#         if not status["embeddings_loaded"]:
+#             print(f"\n🏗️ Building embeddings...")
+#             build_result = pipeline.build_embeddings()
+#             print(f"✅ Built {build_result['total_embeddings']} embeddings")
+
+#         # 4. 테스트 질문
+#         test_queries = [
+#             "배터리 SoC 예측에 사용된 머신러닝 기법들은?",
+#             "AI 및 머신러닝 기법이 적용된 주요 task는 무엇인가요?"
+#             "배터리 전극 공정에서 AI가 적용될 수 있는 부분은 무엇이 있을까요?",
+#         ]
+
+#         print(f"\n❓ Testing queries...")
+#         for i, query in enumerate(test_queries[:1]):  # 첫 번째만 테스트
+#             print(f"\n{i+1}. {query}")
+
+#             result = pipeline.ask(query, return_context=True)
+
+#             print(f"✅ Answer: {result.answer[:200]}...")
+#             print(
+#                 f"📊 Stats: {result.processing_time:.2f}s, {result.confidence_score:.3f} confidence"
+#             )
+#             print(f"📄 Sources: {len(result.source_nodes)} nodes")
+
+#         # 5. 최종 상태
+#         final_status = pipeline.get_system_status()
+#         print(f"\n📈 Final Stats:")
+#         print(
+#             f"   Queries processed: {final_status['pipeline_state']['total_queries_processed']}"
+#         )
+#         print(f"   Cache size: {final_status['cache_size']}")
+
+#         print(f"\n✅ GraphRAG Pipeline test completed!")
+
+#     except Exception as e:
+#         print(f"❌ Test failed: {e}")
+#         import traceback
+
+#         traceback.print_exc()
 
 
 if __name__ == "__main__":
