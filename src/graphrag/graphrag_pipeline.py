@@ -374,20 +374,20 @@ class GraphRAGPipeline:
             # 원본 메서드 백업
             self._original_ask = self.ask
 
-            try:
-                # QA Chain으로 교체
-                optimized_pipeline = replace_pipeline_llm_with_qa_chain(self)
-                self.ask = optimized_pipeline.ask
-                self._qa_chain = getattr(optimized_pipeline, "_qa_chain", None)
+            # try:
+            # QA Chain으로 교체
+            optimized_pipeline = replace_pipeline_llm_with_qa_chain(self)
+            self.ask = optimized_pipeline.ask
+            self._qa_chain = getattr(optimized_pipeline, "_qa_chain", None)
 
-                logger.info("✅ QA Chain optimization enabled successfully")
-                logger.info(
-                    "💡 Use pipeline.ask() as usual - now with LangChain optimization!"
-                )
+            logger.info("✅ QA Chain optimization enabled successfully")
+            logger.info(
+                "💡 Use pipeline.ask() as usual - now with LangChain optimization!"
+            )
 
-            except Exception as e:
-                logger.error(f"❌ Failed to enable QA Chain optimization: {e}")
-                logger.info("🔄 Keeping original ask method")
+        # except Exception as e:
+        #     logger.error(f"❌ Failed to enable QA Chain optimization: {e}")
+        #     logger.info("🔄 Keeping original ask method")
 
     def disable_qa_chain_optimization(self) -> None:
         """QA Chain 최적화 비활성화 (원본 ask 메서드 복원)"""
