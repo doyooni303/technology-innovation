@@ -10,24 +10,31 @@ llm:
 
   huggingface_local:
     # 서버에 있는 Llama 3.1 모델 직접 사용
-    model_path: "/DATA/MODELS/models--meta-llama--Llama-3.1-8B-Instruct"
+    model_path: "meta-llama/Llama-3.1-8B-Instruct"
     # 대안 경로들:
     # - "/DATA/MODELS/models--meta-llama--Meta-Llama-3.1-8B-Instruct"
     # - "/DATA/MODELS/models--Qwen--Qwen2.5-14B-Instruct"  # 더 큰 모델
     # - "/DATA/MODELS/models--google--gemma-2-9b-it"       # Google 모델
     
-    # 생성 설정  
-    max_new_tokens: 2048
-    do_sample: true
-    top_p: 0.9
-    top_k: 50
+    # Beam Search 설정
+    max_new_tokens: 100
+    do_sample: false           # 여전히 false
+    num_beams: 3               # beam search 사용 (다양성 확보)
+    early_stopping: true       # 효율성
     repetition_penalty: 1.1
     
     # 하드웨어 최적화
     device_map: "auto"  # GPU 자동 할당
     torch_dtype: "bfloat16"  # 메모리 효율성
     trust_remote_code: true
+
+    # 캐시 설정 (HuggingFace 캐시 사용)
+    cache_dir: "./cache/huggingface"  # 로컬 캐시 디렉토리
     
+    # 메모리 최적화 (필요시)
+    load_in_8bit: true   # 8비트 양자화
+    load_in_4bit: false   # 4비트 양자화 (더 절약)
+
     # 배치 처리
     batch_size: 16  # 메모리 안전
 

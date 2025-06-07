@@ -108,14 +108,39 @@ class SentenceTransformersConfig:
 
 
 @dataclass
+class OpenAIEmbeddingConfig:
+    """OpenAI 임베딩 설정"""
+
+    model_name: str = "text-embedding-ada-002"
+    api_key: str = "${OPENAI_API_KEY}"
+    batch_size: int = 16
+    max_length: int = 8192
+
+
+@dataclass
+class HuggingFaceAPIEmbeddingConfig:
+    """HuggingFace API 임베딩 설정"""
+
+    model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+    api_key: str = "${HUGGINGFACE_API_KEY}"
+    batch_size: int = 32
+    max_length: int = 512
+
+
+@dataclass
 class EmbeddingsConfig:
-    """임베딩 설정 (YAML의 embeddings 키에 대응)"""
+    """임베딩 설정 (확장된 버전)"""
 
     model_type: str = "sentence-transformers"
     save_directory: str = "./data/processed/vector_store/embeddings"
 
+    # 각 타입별 설정
     sentence_transformers: SentenceTransformersConfig = field(
         default_factory=SentenceTransformersConfig
+    )
+    openai: OpenAIEmbeddingConfig = field(default_factory=OpenAIEmbeddingConfig)
+    huggingface_api: HuggingFaceAPIEmbeddingConfig = field(
+        default_factory=HuggingFaceAPIEmbeddingConfig
     )
 
 
@@ -780,7 +805,7 @@ class GraphRAGConfigManager:
         created_count = 0
         for directory in directories:
             if directory:
-                Path(directory).mkdir(parents=True, exist_ok=True)
+                Path(directory).mkdir(exist_ok=True)
                 created_count += 1
 
         logger.info(f"📁 Created/verified {created_count} directories")

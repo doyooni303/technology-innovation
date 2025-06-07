@@ -727,13 +727,15 @@ class VectorStoreManager:
 
         # 설정 관리자가 있으면 설정을 가져옴
         if config_manager:
-            vs_config = config_manager.get_vector_store_config(store_type)
+            vs_config = config_manager.get_vector_store_config()
+            store_type = vs_config["store_type"]
+            persist_directory = vs_config["persist_directory"]
 
-            # 설정 관리자의 값을 우선 사용
-            if store_type == "auto":
-                store_type = vs_config["store_type"]
-            if persist_directory is None:
-                persist_directory = vs_config["persist_directory"]
+            # # 설정 관리자의 값을 우선 사용
+            # if store_type == "auto":
+            #     store_type = vs_config["store_type"]
+            # if persist_directory is None:
+            #     persist_directory = vs_config["persist_directory"]
 
             # 추가 설정 병합
             kwargs.update(
@@ -977,10 +979,10 @@ class VectorStoreManager:
             paths_config = self.config_manager.config.paths
             base_info["path_structure"] = {
                 "vector_store_root": paths_config.vector_store_root,
-                "embeddings_dir": paths_config.vector_store_embeddings,
-                "faiss_dir": paths_config.vector_store_faiss,
-                "chromadb_dir": paths_config.vector_store_chromadb,
-                "simple_dir": paths_config.vector_store_simple,
+                "embeddings_dir": paths_config.vector_store.embeddings,  # ✅
+                "faiss_dir": paths_config.vector_store.faiss,  # ✅
+                "chromadb_dir": paths_config.vector_store.chromadb,  # ✅
+                "simple_dir": paths_config.vector_store.simple,  # ✅
             }
 
         return base_info

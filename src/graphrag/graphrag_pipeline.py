@@ -141,112 +141,150 @@ class LocalLLMManager:
             raise ImportError("Transformers not available for local LLM")
 
         model_path = self.config.get("model_path")
-        if not model_path or not Path(model_path).exists():
-            raise FileNotFoundError(f"Model not found: {model_path}")
+        # if not model_path or not Path(model_path).exists():
+        #     raise FileNotFoundError(f"Model not found: {model_path}")
 
         logger.info(f"🤖 Loading local LLM: {model_path}")
 
-        try:
-            # 토크나이저 로드
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                model_path, trust_remote_code=self.config.get("trust_remote_code", True)
+        # try:
+        # 토크나이저 로드
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_path, trust_remote_code=self.config.get("trust_remote_code", True)
+        )
+
+        # 패딩 토큰 설정
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        # 양자화 설정 (메모리 절약)
+        quantization_config = None
+        if self.config.get("load_in_4bit", False):
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
             )
+        elif self.config.get("load_in_8bit", False):
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
-            # 패딩 토큰 설정
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
+        # 모델 로드
+        model_kwargs = {
+            "trust_remote_code": self.config.get("trust_remote_code", True),
+            "device_map": self.config.get("device_map", "auto"),
+            "torch_dtype": getattr(torch, self.config.get("torch_dtype", "bfloat16")),
+        }
 
-            # 양자화 설정 (메모리 절약)
-            quantization_config = None
-            if self.config.get("load_in_4bit", False):
-                quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.bfloat16,
-                    bnb_4bit_use_double_quant=True,
-                    bnb_4bit_quant_type="nf4",
-                )
-            elif self.config.get("load_in_8bit", False):
-                quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+        if quantization_config:
+            model_kwargs["quantization_config"] = quantization_config
 
-            # 모델 로드
-            model_kwargs = {
-                "trust_remote_code": self.config.get("trust_remote_code", True),
-                "device_map": self.config.get("device_map", "auto"),
-                "torch_dtype": getattr(
-                    torch, self.config.get("torch_dtype", "bfloat16")
-                ),
-            }
+        self.model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
 
-            if quantization_config:
-                model_kwargs["quantization_config"] = quantization_config
+        # 생성 설정
+        self.generation_config = GenerationConfig(
+            temperature=self.config.get("temperature", 0.1),
+            max_new_tokens=self.config.get("max_new_tokens", 2048),
+            do_sample=self.config.get("do_sample", True),
+            top_p=self.config.get("top_p", 0.9),
+            top_k=self.config.get("top_k", 50),
+            repetition_penalty=self.config.get("repetition_penalty", 1.1),
+            pad_token_id=self.tokenizer.eos_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
+        )
 
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_path, **model_kwargs
-            )
+        self.is_loaded = True
+        logger.info("✅ Local LLM loaded successfully")
 
-            # 생성 설정
-            self.generation_config = GenerationConfig(
-                temperature=self.config.get("temperature", 0.1),
-                max_new_tokens=self.config.get("max_new_tokens", 2048),
-                do_sample=self.config.get("do_sample", True),
-                top_p=self.config.get("top_p", 0.9),
-                top_k=self.config.get("top_k", 50),
-                repetition_penalty=self.config.get("repetition_penalty", 1.1),
-                pad_token_id=self.tokenizer.eos_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-            )
-
-            self.is_loaded = True
-            logger.info("✅ Local LLM loaded successfully")
-
-        except Exception as e:
-            logger.error(f"❌ Failed to load local LLM: {e}")
-            raise
+    # except Exception as e:
+    #     logger.error(f"❌ Failed to load local LLM: {e}")
+    #     raise
 
     def generate(self, prompt: str, max_length: Optional[int] = None) -> str:
         """텍스트 생성"""
         if not self.is_loaded:
             self.load_model()
 
-        try:
-            # 프롬프트 토크나이징
-            inputs = self.tokenizer(
-                prompt,
-                return_tensors="pt",
-                truncation=True,
-                max_length=4096,  # 입력 길이 제한
+        # try:
+        # 프롬프트 토크나이징
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=4096,
+            padding=True,
+        )
+
+        # 디바이스로 이동
+        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+
+        # attention_mask 확인
+        if "attention_mask" not in inputs:
+            inputs["attention_mask"] = torch.ones_like(inputs["input_ids"])
+
+        # YAML 설정 기반 생성 설정 (기본값은 안전하게)
+        generation_config = GenerationConfig(
+            temperature=max(
+                0.01, min(2.0, self.config.get("temperature", 0.1))
+            ),  # 안전 범위
+            max_new_tokens=min(
+                max_length or self.config.get("max_new_tokens", 512),
+                self.config.get("max_new_tokens", 512),
+            ),
+            do_sample=self.config.get("do_sample", True),  # YAML 설정 우선
+            top_p=max(0.1, min(1.0, self.config.get("top_p", 0.9))),  # 안전 범위
+            top_k=max(1, min(100, self.config.get("top_k", 50))),  # 안전 범위
+            repetition_penalty=max(
+                1.0, min(2.0, self.config.get("repetition_penalty", 1.1))
+            ),  # 안전 범위
+            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
+            use_cache=True,
+        )
+
+        logger.info(
+            f"🔍 Generation config: temp={generation_config.temperature}, "
+            f"do_sample={generation_config.do_sample}, "
+            f"max_tokens={generation_config.max_new_tokens}"
+        )
+
+        # 첫 번째 시도: YAML 설정대로
+        with torch.no_grad():
+            # try:
+            outputs = self.model.generate(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                generation_config=generation_config,
+                use_cache=True,
             )
 
-            # 디바이스로 이동
-            inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+            # except RuntimeError as cuda_error:
+            #     if "CUDA" in str(cuda_error) or "device-side assert" in str(cuda_error):
+            #         logger.warning(f"⚠️ CUDA error with YAML settings: {cuda_error}")
+            #         logger.info("🔄 Retrying with safer settings...")
 
-            # 생성 설정 업데이트
-            if max_length:
-                generation_config = GenerationConfig.from_dict(
-                    {**self.generation_config.to_dict(), "max_new_tokens": max_length}
-                )
-            else:
-                generation_config = self.generation_config
+            #         # 두 번째 시도: 안전한 설정으로 재시도
+            #         return self._retry_with_safe_settings(inputs, max_length)
+            #     else:
+            #         raise
 
-            # 텍스트 생성
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs, generation_config=generation_config, use_cache=True
-                )
+        # 생성된 텍스트 디코딩
+        generated_tokens = outputs[0][inputs["input_ids"].shape[1] :]
+        generated_text = self.tokenizer.decode(
+            generated_tokens,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True,
+        )
 
-            # 생성된 텍스트 디코딩 (입력 부분 제거)
-            generated_tokens = outputs[0][inputs["input_ids"].shape[1] :]
-            generated_text = self.tokenizer.decode(
-                generated_tokens,
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=True,
-            )
+        result = generated_text.strip()
+        if not result:
+            result = "답변을 생성할 수 없었습니다."
 
-            return generated_text.strip()
+        logger.info(f"✅ Generated {len(result)} characters with YAML settings")
+        return result
 
-        except Exception as e:
-            logger.error(f"❌ Text generation failed: {e}")
-            return f"죄송합니다. 답변 생성 중 오류가 발생했습니다: {str(e)}"
+    # except Exception as e:
+    #     logger.error(f"❌ Text generation failed: {e}")
+    #     return f"죄송합니다. 답변 생성 중 오류가 발생했습니다: {str(e)}"
 
     def unload_model(self) -> None:
         """모델 언로드 (메모리 해제)"""
@@ -402,8 +440,90 @@ class GraphRAGPipeline:
             logger.warning("⚠️ No local LLM configuration found")
             self.state.components_loaded["llm_manager"] = False
 
+    # def _ensure_embeddings_loaded(self) -> None:
+    #     """임베딩 시스템 로드 확인 - 벡터 저장소 연동 개선"""
+    #     if self.embeddings_loaded:
+    #         return
+
+    #     logger.info("📥 Loading embeddings system...")
+
+    #     # 설정 가져오기
+    #     config = self.config_manager.config
+
+    #     # 통합 그래프 파일 확인
+    #     unified_graph_path = config.graph.unified_graph_path
+    #     if not Path(unified_graph_path).exists():
+    #         raise FileNotFoundError(f"Unified graph not found: {unified_graph_path}")
+
+    #     # 벡터 저장소 경로 확인
+    #     vector_store_root = config.graph.vector_store_path
+    #     if not Path(vector_store_root).exists():
+    #         logger.warning(f"Vector store root not found: {vector_store_root}")
+    #         logger.info("💡 Run build_embeddings() first to create vector store")
+    #         return
+
+    #     # 벡터 저장소 설정 가져오기
+    #     vector_store_config = self.config_manager.get_vector_store_config()
+    #     store_directory = vector_store_config["persist_directory"]
+
+    #     logger.info(f"📂 Vector store directory: {store_directory}")
+    #     logger.info(f"📂 Store type: {vector_store_config['store_type']}")
+
+    #     # 벡터 저장소 로드 또는 생성
+    #     try:
+    #         from .embeddings.vector_store_manager import create_vector_store_from_config
+
+    #         self.vector_store = create_vector_store_from_config(
+    #             config_manager=self.config_manager
+    #         )
+
+    #         # 벡터 저장소가 비어있으면 임베딩에서 로드 시도
+    #         if self.vector_store.store.total_vectors == 0:
+    #             embeddings_dir = config.paths.vector_store.embeddings
+
+    #             if (
+    #                 Path(embeddings_dir).exists()
+    #                 and (Path(embeddings_dir) / "embeddings.npy").exists()
+    #             ):
+    #                 logger.info("🔄 Loading from saved embeddings...")
+    #                 self.vector_store.load_from_saved_embeddings(vector_store_root)
+    #             else:
+    #                 logger.warning(f"No vector data found in: {store_directory}")
+    #                 logger.warning(f"No embeddings found in: {embeddings_dir}")
+    #                 logger.info("💡 Run build_embeddings() first")
+    #                 return
+
+    #         logger.info(
+    #             f"✅ Vector store loaded: {self.vector_store.store.total_vectors:,} vectors"
+    #         )
+
+    #         # SubgraphExtractor 초기화 - VectorStoreManager 인스턴스 직접 전달
+    #         self.subgraph_extractor = SubgraphExtractor(
+    #             unified_graph_path=unified_graph_path,
+    #             vector_store_path=store_directory,  # 경로만 전달
+    #             embedding_model=config.embeddings.model_name,
+    #             device=config.embeddings.device,
+    #         )
+
+    #         # SubgraphExtractor의 벡터 저장소를 수동으로 설정
+    #         self.subgraph_extractor.vector_store = self.vector_store
+
+    #         self.embeddings_loaded = True
+    #         logger.info("✅ Embeddings system loaded successfully")
+
+    #     except Exception as e:
+    #         logger.error(f"❌ Failed to load embeddings system: {e}")
+    #         logger.error(f"   Store directory: {store_directory}")
+    #         logger.error(f"   Store exists: {Path(store_directory).exists()}")
+
+    #         # 디버깅 정보
+    #         if Path(store_directory).exists():
+    #             files = list(Path(store_directory).glob("*"))
+    #             logger.error(f"   Files in store: {[f.name for f in files]}")
+
+    #         raise
     def _ensure_embeddings_loaded(self) -> None:
-        """임베딩 시스템 로드 확인 - 벡터 저장소 연동 개선"""
+        """임베딩 시스템 로드 확인 - 모든 model_type 지원"""
         if self.embeddings_loaded:
             return
 
@@ -418,72 +538,61 @@ class GraphRAGPipeline:
             raise FileNotFoundError(f"Unified graph not found: {unified_graph_path}")
 
         # 벡터 저장소 경로 확인
-        vector_store_root = config.graph.vector_store_path
+        vector_store_root = config.paths.vector_store_root
         if not Path(vector_store_root).exists():
-            logger.warning(f"Vector store root not found: {vector_store_root}")
-            logger.info("💡 Run build_embeddings() first to create vector store")
-            return
+            Path(vector_store_root).mkdir(parents=True, exist_ok=True)
+            logger.info(f"📁 Created vector store directory: {vector_store_root}")
 
         # 벡터 저장소 설정 가져오기
-        vector_store_config = self.config_manager.get_vector_store_config()
-        store_directory = vector_store_config["persist_directory"]
+        vector_config = self.config_manager.get_vector_store_config()
 
-        logger.info(f"📂 Vector store directory: {store_directory}")
-        logger.info(f"📂 Store type: {vector_store_config['store_type']}")
+        # VectorStoreManager 초기화
+        from .embeddings.vector_store_manager import VectorStoreManager
 
-        # 벡터 저장소 로드 또는 생성
-        try:
-            from .embeddings.vector_store_manager import create_vector_store_from_config
+        self.vector_store = VectorStoreManager(
+            store_type=vector_config["store_type"],
+            persist_directory=vector_config["persist_directory"],
+            **{
+                k: v
+                for k, v in vector_config.items()
+                if k not in ["store_type", "persist_directory"]
+            },
+        )
 
-            self.vector_store = create_vector_store_from_config(
-                config_manager=self.config_manager
-            )
+        # 임베딩 설정 가져오기 (모든 타입 지원)
+        embedding_config = self.config_manager.get_embeddings_config()  # ✅ 유연함
 
-            # 벡터 저장소가 비어있으면 임베딩에서 로드 시도
-            if self.vector_store.store.total_vectors == 0:
-                embeddings_dir = config.paths.vector_store_embeddings
+        from .embeddings import create_embedding_model
 
-                if (
-                    Path(embeddings_dir).exists()
-                    and (Path(embeddings_dir) / "embeddings.npy").exists()
-                ):
-                    logger.info("🔄 Loading from saved embeddings...")
-                    self.vector_store.load_from_saved_embeddings(vector_store_root)
-                else:
-                    logger.warning(f"No vector data found in: {store_directory}")
-                    logger.warning(f"No embeddings found in: {embeddings_dir}")
-                    logger.info("💡 Run build_embeddings() first")
-                    return
+        embedder_model = create_embedding_model(
+            model_name=embedding_config["model_name"],  # ✅ 타입 무관
+            device=embedding_config["device"],  # ✅ 타입 무관
+            cache_dir=embedding_config["cache_dir"],  # ✅ 타입 무관
+        )
 
-            logger.info(
-                f"✅ Vector store loaded: {self.vector_store.store.total_vectors:,} vectors"
-            )
+        # MultiNodeEmbedder 초기화
+        from .embeddings.multi_node_embedder import MultiNodeEmbedder
 
-            # SubgraphExtractor 초기화 - VectorStoreManager 인스턴스 직접 전달
-            self.subgraph_extractor = SubgraphExtractor(
-                unified_graph_path=unified_graph_path,
-                vector_store_path=store_directory,  # 경로만 전달
-                embedding_model=config.embedding.model_name,
-                device=config.embedding.device,
-            )
+        self.embedder = MultiNodeEmbedder(
+            unified_graph_path=config.graph.unified_graph_path,
+            embedding_model=embedder_model,
+            vector_store=self.vector_store,
+            batch_size=embedding_config["batch_size"],  # ✅ 타입 무관
+        )
 
-            # SubgraphExtractor의 벡터 저장소를 수동으로 설정
-            self.subgraph_extractor.vector_store = self.vector_store
+        # SubgraphExtractor 초기화 (새로운 설정 구조)
+        embedding_config = self.config_manager.get_embeddings_config()
+        from .embeddings.subgraph_extractor import SubgraphExtractor
 
-            self.embeddings_loaded = True
-            logger.info("✅ Embeddings system loaded successfully")
+        self.subgraph_extractor = SubgraphExtractor(
+            unified_graph_path=config.graph.unified_graph_path,
+            vector_store_path=config.paths.vector_store_root,  # ✅ 경로 전달
+            embedding_model=embedding_config["model_name"],
+            device=embedding_config["device"],
+        )
 
-        except Exception as e:
-            logger.error(f"❌ Failed to load embeddings system: {e}")
-            logger.error(f"   Store directory: {store_directory}")
-            logger.error(f"   Store exists: {Path(store_directory).exists()}")
-
-            # 디버깅 정보
-            if Path(store_directory).exists():
-                files = list(Path(store_directory).glob("*"))
-                logger.error(f"   Files in store: {[f.name for f in files]}")
-
-            raise
+        self.embeddings_loaded = True
+        logger.info("✅ Embeddings system loaded with flexible config structure")
 
     def build_embeddings(self, force_rebuild: bool = False) -> Dict[str, Any]:
         """임베딩 생성 및 벡터 저장소 구축 - 새로운 경로 구조 사용"""
@@ -500,10 +609,11 @@ class GraphRAGPipeline:
         # 임베딩 생성기 초기화 (설정 관리자 사용)
         from .embeddings.multi_node_embedder import create_embedder_with_config
 
+        embedding_config = self.config_manager.get_embeddings_config()
         self.embedder = create_embedder_with_config(
             unified_graph_path=config.graph.unified_graph_path,
             config_manager=self.config_manager,
-            device=config.embedding.device,
+            device=embedding_config["device"],
         )
 
         # 벡터 저장소 설정 가져오기
@@ -528,7 +638,7 @@ class GraphRAGPipeline:
         # 임베딩 결과로부터 벡터 저장소 로드
         self.vector_store.load_from_embeddings(
             embedding_results,
-            embeddings_dir=config.paths.vector_store_embeddings,
+            embeddings_dir=config.paths.vector_store.embeddings,
         )
 
         # 통계 반환
@@ -541,7 +651,7 @@ class GraphRAGPipeline:
             "vector_store_info": self.vector_store.get_store_info(),
             "path_structure": {
                 "vector_store_root": config.graph.vector_store_path,
-                "embeddings_dir": config.paths.vector_store_embeddings,
+                "embeddings_dir": config.paths.vector_store.embeddings,
                 "store_specific_dir": vector_store_config["persist_directory"],
             },
         }
@@ -549,7 +659,7 @@ class GraphRAGPipeline:
         logger.info(f"✅ Embeddings built: {total_nodes:,} nodes")
         logger.info(f"📂 Structure created:")
         logger.info(f"   Root: {config.graph.vector_store_path}")
-        logger.info(f"   Embeddings: {config.paths.vector_store_embeddings}")
+        logger.info(f"   Embeddings: {config.paths.vector_store.embeddings}")
         logger.info(f"   Vector Store: {vector_store_config['persist_directory']}")
 
         return result
@@ -570,129 +680,204 @@ class GraphRAGPipeline:
         start_time = time.time()
         self.state.status = PipelineStatus.PROCESSING
 
-        try:
-            logger.info(f"❓ Processing query: '{query[:50]}...'")
+        # try:
+        logger.info(f"❓ Processing query: '{query[:50]}...'")
 
-            # 1. 캐시 확인
-            if query in self.query_cache:
-                logger.info("✅ Cache hit")
-                cached_result = self.query_cache[query]
-                if return_context:
-                    return cached_result
-                else:
-                    return cached_result.answer
-
-            # 2. 임베딩 시스템 로드
-            self._ensure_embeddings_loaded()
-
-            # 3. 쿼리 분석
-            query_analysis = self.query_analyzer.analyze(query)
-
-            # 4. 서브그래프 추출
-            subgraph_result = self.subgraph_extractor.extract_subgraph(
-                query=query, query_analysis=query_analysis
-            )
-
-            # 5. 컨텍스트 직렬화
-            serialized_context = self.context_serializer.serialize(
-                subgraph_result=subgraph_result, query_analysis=query_analysis
-            )
-
-            # 6. LLM으로 답변 생성
-            answer = self._generate_answer(query, serialized_context.main_text)
-
-            # 7. 결과 구성
-            processing_time = time.time() - start_time
-
-            qa_result = QAResult(
-                query=query,
-                answer=answer,
-                subgraph_result=subgraph_result,
-                serialized_context=serialized_context,
-                query_analysis=query_analysis,
-                processing_time=processing_time,
-                confidence_score=subgraph_result.confidence_score,
-                source_nodes=list(subgraph_result.nodes.keys()),
-            )
-
-            # 8. 캐시 저장
-            self.query_cache[query] = qa_result
-
-            # 9. 상태 업데이트
-            self.state.total_queries_processed += 1
-            self.state.last_query_time = processing_time
-            self.state.status = PipelineStatus.READY
-
-            logger.info(f"✅ Query processed ({processing_time:.2f}s)")
-
+        # 1. 캐시 확인
+        if query in self.query_cache:
+            logger.info("✅ Cache hit")
+            cached_result = self.query_cache[query]
             if return_context:
-                return qa_result
+                return cached_result
             else:
-                return answer
+                return cached_result.answer
 
-        except Exception as e:
-            self.state.status = PipelineStatus.ERROR
-            self.state.last_error = str(e)
-            logger.error(f"❌ Query processing failed: {e}")
+        # 2. 임베딩 시스템 로드
+        self._ensure_embeddings_loaded()
 
-            # 간단한 답변 반환
-            fallback_answer = f"죄송합니다. 질문 처리 중 오류가 발생했습니다: {str(e)}"
+        # 3. 쿼리 분석
+        query_analysis = self.query_analyzer.analyze(query)
 
-            if return_context:
-                return QAResult(
-                    query=query,
-                    answer=fallback_answer,
-                    subgraph_result=None,
-                    serialized_context=None,
-                    query_analysis=None,
-                    processing_time=time.time() - start_time,
-                    confidence_score=0.0,
-                    source_nodes=[],
-                )
-            else:
-                return fallback_answer
+        # 4. 서브그래프 추출
+        subgraph_result = self.subgraph_extractor.extract_subgraph(
+            query=query, query_analysis=query_analysis
+        )
+
+        # 5. 컨텍스트 직렬화
+        serialized_context = self.context_serializer.serialize(
+            subgraph_result=subgraph_result, query_analysis=query_analysis
+        )
+
+        # 6. LLM으로 답변 생성
+        context_text = getattr(serialized_context, "main_text", "") or ""
+        if not isinstance(context_text, str):
+            context_text = str(context_text) if context_text else "No context available"
+
+        answer = self._generate_answer(query, context_text)
+        # answer = self._generate_answer(query, serialized_context.main_text)
+
+        # 7. 결과 구성
+        processing_time = time.time() - start_time
+
+        qa_result = QAResult(
+            query=query,
+            answer=answer,
+            subgraph_result=subgraph_result,
+            serialized_context=serialized_context,
+            query_analysis=query_analysis,
+            processing_time=processing_time,
+            confidence_score=subgraph_result.confidence_score,
+            source_nodes=list(subgraph_result.nodes.keys()),
+        )
+
+        # 8. 캐시 저장
+        self.query_cache[query] = qa_result
+
+        # 9. 상태 업데이트
+        self.state.total_queries_processed += 1
+        self.state.last_query_time = processing_time
+        self.state.status = PipelineStatus.READY
+
+        logger.info(f"✅ Query processed ({processing_time:.2f}s)")
+
+        if return_context:
+            return qa_result
+        else:
+            return answer
+
+    # except Exception as e:
+    #     self.state.status = PipelineStatus.ERROR
+    #     self.state.last_error = str(e)
+    #     logger.error(f"❌ Query processing failed: {e}")
+
+    #     # 간단한 답변 반환
+    #     fallback_answer = f"죄송합니다. 질문 처리 중 오류가 발생했습니다: {str(e)}"
+
+    #     if return_context:
+    #         return QAResult(
+    #             query=query,
+    #             answer=fallback_answer,
+    #             subgraph_result=None,
+    #             serialized_context=None,
+    #             query_analysis=None,
+    #             processing_time=time.time() - start_time,
+    #             confidence_score=0.0,
+    #             source_nodes=[],
+    #         )
+    #     else:
+    #         return fallback_answer
 
     def _generate_answer(self, query: str, context: str) -> str:
-        """LLM으로 답변 생성"""
+        """LLM으로 답변 생성 (안전한 버전)"""
 
+        # 입력 검증
+        if not isinstance(query, str):
+            logger.error(f"❌ Query is not a string: {type(query)} - {query}")
+            query = str(query) if query is not None else "Unknown query"
+
+        if not isinstance(context, str):
+            logger.error(f"❌ Context is not a string: {type(context)} - {context}")
+            context = str(context) if context is not None else "No context available"
+
+        # 빈 문자열 처리
+        if not query.strip():
+            query = "Unknown query"
+
+        if not context.strip():
+            context = "No context available"
+
+        # try:
         # 프롬프트 구성
         prompt = self._build_qa_prompt(query, context)
+
+        # 프롬프트 검증
+        if not isinstance(prompt, str):
+            logger.error(f"❌ Prompt is not a string: {type(prompt)}")
+            prompt = f"질문: {query}\n답변을 생성해주세요."
+
+        logger.debug(f"🔍 Generated prompt length: {len(prompt)}")
 
         # LLM으로 답변 생성
         if self.llm_manager and self.llm_manager.config.get("model_path"):
             # 로컬 LLM 사용
-            try:
-                answer = self.llm_manager.generate(prompt, max_length=1000)
-                return answer
-            except Exception as e:
-                logger.error(f"❌ Local LLM generation failed: {e}")
-                return f"로컬 LLM 오류: {str(e)}"
+            # try:
+            logger.info("🤖 Generating answer with local LLM...")
+            answer = self.llm_manager.generate(prompt, max_length=1000)
+
+            # 답변 검증
+            if not isinstance(answer, str):
+                logger.error(f"❌ LLM returned non-string: {type(answer)}")
+                return f"LLM 응답 형식 오류가 발생했습니다."
+
+            if not answer.strip():
+                logger.warning("⚠️ LLM returned empty response")
+                return "죄송합니다. 적절한 답변을 생성할 수 없었습니다."
+
+            return answer.strip()
+
+        # except Exception as e:
+        #     logger.error(f"❌ Local LLM generation failed: {e}")
+        #     logger.debug(f"❌ Prompt that caused error: {prompt[:200]}...")
+        #     return f"로컬 LLM 오류: {str(e)}"
         else:
             # API LLM 폴백 또는 기본 답변
             return (
                 "죄송합니다. LLM이 설정되지 않았습니다. 로컬 모델 경로를 확인해주세요."
             )
 
+    # except Exception as e:
+    #     logger.error(f"❌ Answer generation failed: {e}")
+    #     return f"답변 생성 중 오류가 발생했습니다: {str(e)}"
+
     def _build_qa_prompt(self, query: str, context: str) -> str:
-        """QA 프롬프트 구성"""
+        """QA 프롬프트 구성 (안전한 버전)"""
+
+        # 입력 검증 및 정리
+        query = str(query).strip() if query else "Unknown query"
+        context = str(context).strip() if context else "No context available"
+
+        # 컨텍스트 길이 제한 (토크나이저 한계 고려)
+        max_context_length = 3000  # 안전한 길이
+        if len(context) > max_context_length:
+            context = context[:max_context_length] + "..."
+            logger.warning(f"⚠️ Context truncated to {max_context_length} chars")
 
         prompt_template = """다음은 학술 연구 문헌 분석 시스템입니다. 제공된 컨텍스트를 바탕으로 사용자의 질문에 정확하고 유용한 답변을 제공하세요.
 
-**컨텍스트:**
-{context}
+    **컨텍스트:**
+    {context}
 
-**질문:** {query}
+    **질문:** {query}
 
-**답변 가이드라인:**
-1. 컨텍스트에 기반하여 정확한 정보를 제공하세요
-2. 한국어와 영어를 적절히 혼용하여 답변하세요
-3. 구체적인 논문, 저자, 연구 결과를 언급하세요
-4. 불확실한 내용은 명시하세요
-5. 답변은 500자 이내로 간결하게 작성하세요
+    **답변 가이드라인:**
+    1. 컨텍스트에 기반하여 정확한 정보를 제공하세요
+    2. 한국어와 영어를 적절히 혼용하여 답변하세요
+    3. 구체적인 논문, 저자, 연구 결과를 언급하세요
+    4. 불확실한 내용은 명시하세요
+    5. 답변은 500자 이내로 간결하게 작성하세요
 
-**답변:**"""
+    **답변:**"""
 
-        return prompt_template.format(context=context, query=query)
+        try:
+            formatted_prompt = prompt_template.format(context=context, query=query)
+
+            # 프롬프트 길이 확인
+            if len(formatted_prompt) > 8000:  # 토크나이저 한계 고려
+                logger.warning(
+                    f"⚠️ Prompt too long: {len(formatted_prompt)} chars, truncating..."
+                )
+                # 컨텍스트를 더 줄임
+                shorter_context = context[:1500] + "..."
+                formatted_prompt = prompt_template.format(
+                    context=shorter_context, query=query
+                )
+
+            return formatted_prompt
+
+        except Exception as e:
+            logger.error(f"❌ Prompt formatting failed: {e}")
+            # 최소한의 안전한 프롬프트
+            return f"질문: {query}\n\n위 질문에 대해 답변해주세요."
 
     def get_subgraph(self, query: str) -> Optional[SubgraphResult]:
         """서브그래프만 추출 (LLM 없이)"""
@@ -736,9 +921,10 @@ class GraphRAGPipeline:
         # 설정 관리자 정보
         if self.config_manager:
             config = self.config_manager.config
+            embedding_config = self.config_manager.get_embeddings_config()
             status["configuration"] = {
                 "llm_provider": config.llm.provider,
-                "embedding_model": config.embeddings.sentence_transformers.model_name,
+                "embedding_model": embedding_config["model_name"],
                 "vector_store_type": config.vector_store.store_type,
                 "paths": {
                     "unified_graph": config.graph.unified_graph_path,
