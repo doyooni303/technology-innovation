@@ -2,5 +2,5 @@ data/bibs/*
 data/pdfs/*
 data/processed/*
 .env
-cahche/
+cache/
 logs/

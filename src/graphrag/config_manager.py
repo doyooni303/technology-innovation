@@ -68,25 +68,32 @@ class LLMConfig:
 
 
 @dataclass
-class EmbeddingConfig:
-    """임베딩 설정"""
+class PathConfig:
+    """경로 설정 클래스"""
 
-    model_name: str = "auto"
-    device: str = "auto"
-    batch_size: int = 32
-    max_length: int = 512
-    cache_dir: Optional[str] = None
+    # 기본 디렉토리
+    data_dir: str = "./data"
+    processed_dir: str = "./data/processed"
 
+    # 그래프 관련
+    unified_graph: str = ""
+    individual_graphs_dir: str = ""
 
-@dataclass
-class GraphConfig:
-    """그래프 설정"""
+    # 벡터 저장소 구조
+    vector_store_root: str = "./data/processed/vector_store"
+    vector_store_embeddings: str = "./data/processed/vector_store/embeddings"
+    vector_store_faiss: str = "./data/processed/vector_store/faiss"
+    vector_store_chromadb: str = "./data/processed/vector_store/chromadb"
+    vector_store_simple: str = "./data/processed/vector_store/simple"
 
-    unified_graph_path: str = ""
-    vector_store_path: str = ""
-    graphs_directory: str = "./graphs"
-    cache_enabled: bool = True
-    cache_ttl_hours: int = 24
+    # 캐시 디렉토리
+    cache_dir: str = "./cache"
+    embeddings_cache: str = "./cache/embeddings"
+    query_cache: str = "./cache/queries"
+    logs_dir: str = "./logs"
+
+    # 서버 모델 경로
+    models_dir: str = "/DATA/MODELS"
 
 
 @dataclass
@@ -115,8 +122,96 @@ class SystemConfig:
 
 
 @dataclass
+class GraphConfig:
+    """그래프 설정 - 경로 개선"""
+
+    unified_graph_path: str = ""
+    vector_store_path: str = ""  # 루트 경로
+    graphs_directory: str = "./graphs"
+    cache_enabled: bool = True
+    cache_ttl_hours: int = 24
+
+    def __post_init__(self):
+        """기본 경로 설정"""
+        if not self.unified_graph_path:
+            self.unified_graph_path = (
+                "./data/processed/graphs/unified/unified_knowledge_graph.json"
+            )
+        if not self.vector_store_path:
+            self.vector_store_path = "./data/processed/vector_store"
+
+
+@dataclass
+class VectorStoreConfig:
+    """벡터 저장소 설정 - 경로 중복 문제 해결"""
+
+    store_type: str
+    persist_directory: Optional[str] = None
+    collection_name: str = "graphrag_embeddings"
+    distance_metric: str = "cosine"
+    index_type: str = "flat"
+    batch_size: int = 1000
+    cache_size: int = 10000
+
+    # 서브폴더 지원
+    faiss_directory: str = ""
+    chromadb_directory: str = ""
+    simple_directory: str = ""
+
+    # FAISS 관련 설정
+    use_gpu: bool = False
+    gpu_id: int = 0
+    gpu_memory_fraction: float = 0.5
+
+    def __post_init__(self):
+        """서브 디렉토리 자동 설정 - 중복 방지"""
+        if self.persist_directory:
+            # 이미 서브폴더가 포함된 경우 체크
+            if not self.faiss_directory:
+                # persist_directory가 이미 /faiss로 끝나면 그대로 사용
+                if self.persist_directory.endswith("/faiss"):
+                    self.faiss_directory = self.persist_directory
+                else:
+                    self.faiss_directory = f"{self.persist_directory}/faiss"
+
+            if not self.chromadb_directory:
+                if self.persist_directory.endswith("/chromadb"):
+                    self.chromadb_directory = self.persist_directory
+                else:
+                    self.chromadb_directory = f"{self.persist_directory}/chromadb"
+
+            if not self.simple_directory:
+                if self.persist_directory.endswith("/simple"):
+                    self.simple_directory = self.persist_directory
+                else:
+                    self.simple_directory = f"{self.persist_directory}/simple"
+
+
+@dataclass
+class EmbeddingConfig:
+    """임베딩 설정 - 저장 경로 분리"""
+
+    model_name: str = "auto"
+    device: str = "auto"
+    batch_size: int = 32
+    max_length: int = 512
+    cache_dir: Optional[str] = None
+
+    # 임베딩 파일 저장 경로 (벡터 저장소와 분리)
+    save_directory: str = "./data/processed/vector_store/embeddings"
+
+    # 모델 타입별 설정
+    model_type: str = "sentence-transformers"
+
+    def __post_init__(self):
+        """기본 캐시 디렉토리 설정"""
+        if not self.cache_dir:
+            self.cache_dir = "./cache/embeddings"
+
+
+@dataclass
 class GraphRAGConfig:
-    """GraphRAG 전체 설정"""
+    """GraphRAG 전체 설정 - 경로 구조 개선"""
 
     # 하위 설정들
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -125,10 +220,39 @@ class GraphRAGConfig:
     qa: QAConfig = field(default_factory=QAConfig)
     system: SystemConfig = field(default_factory=SystemConfig)
 
+    # 새로운 설정들
+    paths: PathConfig = field(default_factory=PathConfig)
+    vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
+
     # 메타데이터
     version: str = "1.0.0"
     config_source: ConfigSource = ConfigSource.DEFAULT
     last_updated: Optional[str] = None
+
+
+@dataclass
+class QAConfig:
+    """QA 체인 설정"""
+
+    chain_type: str = "retrieval_qa"
+    max_docs: int = 10
+    min_relevance_score: float = 0.3
+    return_source_documents: bool = True
+    enable_memory: bool = False
+    memory_type: str = "buffer"
+    max_memory_tokens: int = 4000
+
+
+@dataclass
+class SystemConfig:
+    """시스템 설정"""
+
+    log_level: str = "INFO"
+    verbose: bool = False
+    parallel_processing: bool = True
+    max_workers: int = 4
+    temp_directory: str = "./tmp"
+    enable_monitoring: bool = False
 
 
 class GraphRAGConfigManager:
@@ -353,7 +477,10 @@ class GraphRAGConfigManager:
         """딕셔너리를 GraphRAGConfig로 변환 (중첩 구조 지원)"""
 
         # LLM 설정 처리 - 중첩 구조 평면화
-        llm_data = config_dict.get("llm", {}).copy()  # 복사본 생성
+        llm_data = config_dict.get("llm", {}).copy()
+        embedding_data = config_dict.get("embedding", {}).copy()
+        if not embedding_data:
+            embedding_data = config_dict.get("embeddings", {}).copy()
 
         if "provider" in llm_data:
             provider = llm_data["provider"]
@@ -374,83 +501,86 @@ class GraphRAGConfigManager:
                 del llm_data[provider]
                 logger.info(f"✅ Flattened {provider} config")
 
-        # 임베딩 설정 처리 - 마찬가지로 중첩 구조 평면화
-        embedding_data = config_dict.get("embedding", {}).copy()
-        if not embedding_data:
-            embedding_data = config_dict.get(
-                "embeddings", {}
-            ).copy()  # embeddings도 지원
-
+        # 임베딩 설정 처리 - 저장 경로 추가
         if "model_type" in embedding_data:
             model_type = embedding_data["model_type"]
-
-            # model_type별 중첩 설정 평면화 (sentence_transformers, openai_embeddings 등)
             if model_type in embedding_data:
                 logger.info(f"🔧 Processing nested embedding config for: {model_type}")
-
                 nested_config = embedding_data[model_type]
-
                 for key, value in nested_config.items():
                     if key not in embedding_data:
                         embedding_data[key] = value
                         logger.debug(f"   Added embedding {key} = {value}")
-
                 del embedding_data[model_type]
                 logger.info(f"✅ Flattened {model_type} embedding config")
 
+        # 경로 설정 처리
+        paths_data = config_dict.get("paths", {})
+
+        # paths에서 vector_store 섹션 처리
+        if "vector_store" in paths_data:
+            vs_paths = paths_data["vector_store"]
+            paths_data.update(
+                {
+                    "vector_store_embeddings": vs_paths.get("embeddings", ""),
+                    "vector_store_faiss": vs_paths.get("faiss", ""),
+                    "vector_store_chromadb": vs_paths.get("chromadb", ""),
+                    "vector_store_simple": vs_paths.get("simple", ""),
+                }
+            )
+            # 중첩 구조 제거
+            del paths_data["vector_store"]
+
         # 벡터 저장소 설정 처리
         vector_store_data = config_dict.get("vector_store", {}).copy()
+        # 저장소별 설정 평면화
+        if "faiss" in vector_store_data:
+            faiss_config = vector_store_data["faiss"]
+            vector_store_data.update(
+                {
+                    "faiss_directory": faiss_config.get("persist_directory", ""),
+                    "faiss_index_type": faiss_config.get("index_type", "flat"),
+                    "faiss_distance_metric": faiss_config.get(
+                        "distance_metric", "cosine"
+                    ),
+                    "faiss_use_gpu": faiss_config.get("use_gpu", False),
+                    "faiss_gpu_id": faiss_config.get("gpu_id", 0),
+                    "faiss_gpu_memory_fraction": faiss_config.get(
+                        "gpu_memory_fraction", 0.5
+                    ),
+                }
+            )
+            del vector_store_data["faiss"]
 
-        if "store_type" in vector_store_data:
-            store_type = vector_store_data["store_type"]
+        if "chromadb" in vector_store_data:
+            chromadb_config = vector_store_data["chromadb"]
+            vector_store_data.update(
+                {
+                    "chromadb_directory": chromadb_config.get("persist_directory", ""),
+                    "chromadb_collection_name": chromadb_config.get(
+                        "collection_name", "graphrag_embeddings"
+                    ),
+                    "chromadb_distance_metric": chromadb_config.get(
+                        "distance_metric", "cosine"
+                    ),
+                }
+            )
+            del vector_store_data["chromadb"]
 
-            # store_type별 중첩 설정 평면화 (faiss, chroma, simple 등)
-            if store_type in vector_store_data:
-                logger.info(
-                    f"🔧 Processing nested vector store config for: {store_type}"
-                )
+        if "simple" in vector_store_data:
+            simple_config = vector_store_data["simple"]
+            vector_store_data.update(
+                {
+                    "simple_directory": simple_config.get("persist_directory", ""),
+                }
+            )
+            del vector_store_data["simple"]
 
-                nested_config = vector_store_data[store_type]
-
-                for key, value in nested_config.items():
-                    if key not in vector_store_data:
-                        vector_store_data[key] = value
-                        logger.debug(f"   Added vector_store {key} = {value}")
-
-                del vector_store_data[store_type]
-                logger.info(f"✅ Flattened {store_type} vector store config")
-
-        # 기타 중첩 설정들도 처리 (graph_processing, hardware 등)
-        processed_config = config_dict.copy()
-
-        # 처리된 설정들로 교체
-        processed_config["llm"] = llm_data
-        processed_config["embedding"] = embedding_data
-        processed_config["vector_store"] = vector_store_data
-
-        # 나머지 중첩 설정들 평면화 (필요시)
-        nested_sections = [
-            "graph_processing",
-            "hardware",
-            "query_analysis",
-            "performance",
-        ]
-
-        for section in nested_sections:
-            if section in processed_config:
-                section_data = processed_config[section]
-
-                # 중첩 구조가 있으면 평면화
-                flattened = {}
-                for key, value in section_data.items():
-                    if isinstance(value, dict):
-                        # 하위 딕셔너리를 prefix와 함께 평면화
-                        for sub_key, sub_value in value.items():
-                            flattened[f"{key}_{sub_key}"] = sub_value
-                    else:
-                        flattened[key] = value
-
-                processed_config[section] = flattened
+        # 임베딩에 저장 경로 추가
+        if "save_directory" not in embedding_data:
+            embedding_data["save_directory"] = (
+                "./data/processed/vector_store/embeddings"
+            )
 
         # 각 설정 클래스 생성
         try:
@@ -458,8 +588,6 @@ class GraphRAGConfigManager:
             logger.info("✅ LLMConfig created successfully")
         except Exception as e:
             logger.error(f"❌ LLMConfig creation failed: {e}")
-            logger.info(f"Available LLM keys: {list(llm_data.keys())}")
-            # 기본값으로 생성
             llm_config = LLMConfig()
 
         try:
@@ -467,21 +595,32 @@ class GraphRAGConfigManager:
             logger.info("✅ EmbeddingConfig created successfully")
         except Exception as e:
             logger.error(f"❌ EmbeddingConfig creation failed: {e}")
-            logger.info(f"Available embedding keys: {list(embedding_data.keys())}")
             embedding_config = EmbeddingConfig()
 
+        try:
+            paths_config = PathConfig(**paths_data)
+            logger.info("✅ PathConfig created successfully")
+        except Exception as e:
+            logger.error(f"❌ PathConfig creation failed: {e}")
+            paths_config = PathConfig()
+
+        try:
+            vector_store_config = VectorStoreConfig(**vector_store_data)
+            logger.info("✅ VectorStoreConfig created successfully")
+        except Exception as e:
+            logger.error(f"❌ VectorStoreConfig creation failed: {e}")
+            vector_store_config = VectorStoreConfig()
+
         # 나머지 설정들
-        graph_config = GraphConfig(**processed_config.get("graph", {}))
-        qa_config = QAConfig(**processed_config.get("qa", {}))
-        system_config = SystemConfig(**processed_config.get("system", {}))
+        graph_config = GraphConfig(**config_dict.get("graph", {}))
+        qa_config = QAConfig(**config_dict.get("qa", {}))
+        system_config = SystemConfig(**config_dict.get("system", {}))
 
         # 메타데이터
         meta_fields = {
-            "version": processed_config.get("version", "1.0.0"),
-            "config_source": processed_config.get(
-                "config_source", ConfigSource.DEFAULT
-            ),
-            "last_updated": processed_config.get("last_updated"),
+            "version": config_dict.get("version", "1.0.0"),
+            "config_source": config_dict.get("config_source", ConfigSource.DEFAULT),
+            "last_updated": config_dict.get("last_updated"),
         }
 
         return GraphRAGConfig(
@@ -490,6 +629,8 @@ class GraphRAGConfigManager:
             graph=graph_config,
             qa=qa_config,
             system=system_config,
+            paths=paths_config,
+            vector_store=vector_store_config,
             **meta_fields,
         )
 
@@ -631,6 +772,103 @@ class GraphRAGConfigManager:
             "min_relevance_score": self.config.qa.min_relevance_score,
             "enable_caching": self.config.graph.cache_enabled,
         }
+
+    def get_vector_store_config(
+        self, store_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """벡터 저장소 설정을 타입별로 반환 - 경로 중복 방지"""
+
+        if store_type is None:
+            store_type = self.config.vector_store.store_type
+
+        base_config = {
+            "store_type": store_type,
+            "batch_size": self.config.vector_store.batch_size,
+            "persist_directory": self.config.vector_store.persist_directory,
+        }
+
+        if store_type == "faiss":
+            # persist_directory 설정 개선
+            faiss_dir = self.config.vector_store.faiss_directory
+            # 중복 경로 방지
+            if faiss_dir.endswith("/faiss/faiss"):
+                faiss_dir = faiss_dir.replace("/faiss/faiss", "/faiss")
+
+            base_config.update(
+                {
+                    "persist_directory": faiss_dir,
+                    "index_type": self.config.vector_store.faiss_index_type,
+                    "distance_metric": self.config.vector_store.faiss_distance_metric,
+                    "use_gpu": self.config.vector_store.faiss_use_gpu,
+                    "gpu_id": self.config.vector_store.faiss_gpu_id,
+                    "gpu_memory_fraction": self.config.vector_store.faiss_gpu_memory_fraction,
+                }
+            )
+        elif store_type == "chromadb":
+            chromadb_dir = self.config.vector_store.chromadb_directory
+            if chromadb_dir.endswith("/chromadb/chromadb"):
+                chromadb_dir = chromadb_dir.replace("/chromadb/chromadb", "/chromadb")
+
+            base_config.update(
+                {
+                    "persist_directory": chromadb_dir,
+                    "collection_name": self.config.vector_store.chromadb_collection_name,
+                    "distance_metric": self.config.vector_store.chromadb_distance_metric,
+                }
+            )
+        elif store_type == "simple":
+            simple_dir = self.config.vector_store.simple_directory
+            if simple_dir.endswith("/simple/simple"):
+                simple_dir = simple_dir.replace("/simple/simple", "/simple")
+
+            base_config.update(
+                {
+                    "persist_directory": simple_dir,
+                }
+            )
+
+        return base_config
+
+    def get_embeddings_config(self) -> Dict[str, Any]:
+        """임베딩 설정 반환 (저장 경로 포함)"""
+        return {
+            "model_name": self.config.embedding.model_name,
+            "device": self.config.embedding.device,
+            "batch_size": self.config.embedding.batch_size,
+            "max_length": self.config.embedding.max_length,
+            "cache_dir": self.config.embedding.cache_dir,
+            "save_directory": self.config.embedding.save_directory,
+            "model_type": self.config.embedding.model_type,
+        }
+
+    def get_all_directories(self) -> List[str]:
+        """생성해야 할 모든 디렉토리 목록 반환"""
+        return [
+            self.config.paths.data_dir,
+            self.config.paths.processed_dir,
+            self.config.paths.vector_store_root,
+            self.config.paths.vector_store_embeddings,
+            self.config.paths.vector_store_faiss,
+            self.config.paths.vector_store_chromadb,
+            self.config.paths.vector_store_simple,
+            self.config.paths.cache_dir,
+            self.config.paths.embeddings_cache,
+            self.config.paths.query_cache,
+            self.config.paths.logs_dir,
+        ]
+
+    def create_directories(self) -> None:
+        """필요한 디렉토리들 생성"""
+        from pathlib import Path
+
+        directories = self.get_all_directories()
+
+        for directory in directories:
+            if directory:  # 빈 문자열 체크
+                Path(directory).mkdir(parents=True, exist_ok=True)
+                logger.debug(f"📁 Created directory: {directory}")
+
+        logger.info(f"✅ Created {len(directories)} directories")
 
     def save_config(self, file_path: Optional[str] = None) -> None:
         """현재 설정을 파일로 저장"""

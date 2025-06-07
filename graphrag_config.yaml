@@ -47,57 +47,64 @@ llm:
     api_key: "${HUGGINGFACE_API_KEY}"
 
 # ============================================================================
-# 임베딩 설정 - Sentence Transformers (로컬)
+# 임베딩 설정 - 저장 경로 분리
 # ============================================================================
 embeddings:
   model_type: "sentence-transformers"
   
+  # 임베딩 파일 저장 경로 (vector_store와 분리)
+  save_directory: "./data/processed/vector_store/embeddings"
+  
   sentence_transformers:
-    # 서버 성능 활용 - 고품질 다국어 모델
-    model_name: "paraphrase-multilingual-mpnet-base-v2"  # 768차원, 고품질
-    # 대안들:
-    # - "paraphrase-multilingual-MiniLM-L12-v2"  # 384차원, 빠름
-    # - "allenai/specter2_base"                  # 과학논문 특화
-    
-    device: "auto"  # GPU 사용
-    batch_size: 32  # 서버 성능 활용
+    model_name: "paraphrase-multilingual-mpnet-base-v2"
+    device: "auto"
+    batch_size: 32
     cache_dir: "./cache/embeddings"
 
+
 # ============================================================================
-# 벡터 저장소 설정 - ChromaDB (고성능)
+# 벡터 저장소 설정 - 서브폴더 구조 지원
 # ============================================================================
 vector_store:
-  store_type: "chromadb"  # [faiss, chromadb]
+  store_type: "faiss"  # [faiss, chromadb, simple]
   batch_size: 128
   
+  # 루트 디렉토리 (모든 저장소 공통)
+  persist_directory: "./data/processed/vector_store"
+  
   faiss:
-    persist_directory: "./data/processed/vector_store"
-    index_type: "flat"    # 정확도 우선
+    # FAISS 전용 서브폴더
+    persist_directory: "./data/processed/vector_store/faiss"
+    index_type: "flat"
     distance_metric: "cosine"
-    use_gpu: false  # GPU 사용 활성화
-    gpu_id: 0      # 사용할 GPU ID
+    use_gpu: false  # 개발 단계에서는 CPU 사용
+    gpu_id: 0
     gpu_memory_fraction: 0.5
   
   chromadb:
-    persist_directory: "./data/processed/vector_store"
+    # ChromaDB 전용 서브폴더
+    persist_directory: "./data/processed/vector_store/chromadb"
     collection_name: "graphrag_embeddings"
     distance_metric: "cosine"
   
   simple:
-    persist_directory: "./data/processed/vector_store"
+    # Simple 저장소 전용 서브폴더
+    persist_directory: "./data/processed/vector_store/simple"
 
 # ============================================================================
-# 서버 성능 활용 설정
+# 그래프 처리 설정 - 경로 참조 업데이트
 # ============================================================================
 graph_processing:
   node_embeddings:
-    max_text_length: 512    # 서버 성능으로 긴 텍스트 처리
-    batch_size: 32          # 대용량 배치 처리
+    max_text_length: 512
+    batch_size: 32
     cache_embeddings: true
-    cache_dir: "./data/processed/embeddings_cache"
+    cache_dir: "./cache/embeddings"
+    # 임베딩 저장 경로
+    output_directory: "./data/processed/vector_store/embeddings"
     
   subgraph_extraction:
-    max_nodes: 300          # 서버 성능 활용
+    max_nodes: 300
     max_edges: 800
     max_hops: 3
     initial_top_k: 25
@@ -105,7 +112,7 @@ graph_processing:
     expansion_factor: 2.5
     
   context_serialization:
-    max_tokens: 8000        # Llama 3.1 컨텍스트 활용
+    max_tokens: 8000
     format_style: "structured"
     language: "mixed"
     include_statistics: true
@@ -148,13 +155,27 @@ query_analysis:
     exploratory: 240
 
 # ============================================================================
-# 파일 경로 설정
+# 파일 경로 설정 - 벡터 저장소 구조 개선
 # ============================================================================
 paths:
   data_dir: "./data"
   processed_dir: "./data/processed"
+  
+  # 그래프 관련 경로
   unified_graph: "./data/processed/graphs/unified/unified_knowledge_graph.json"
   individual_graphs_dir: "./data/processed/graphs"
+  
+  # 벡터 저장소 루트 디렉토리
+  vector_store_root: "./data/processed/vector_store"
+  
+  # 벡터 저장소 하위 구조
+  vector_store:
+    embeddings: "./data/processed/vector_store/embeddings"     # 원본 임베딩 파일
+    faiss: "./data/processed/vector_store/faiss"               # FAISS 인덱스
+    chromadb: "./data/processed/vector_store/chromadb"         # ChromaDB 데이터
+    simple: "./data/processed/vector_store/simple"             # Simple 저장소
+  
+  # 캐시 디렉토리
   cache_dir: "./cache"
   embeddings_cache: "./cache/embeddings"
   query_cache: "./cache/queries"
@@ -162,6 +183,16 @@ paths:
   
   # 서버 모델 경로
   models_dir: "/DATA/MODELS"
+
+# ============================================================================
+# 그래프 설정 - 경로 참조 업데이트
+# ============================================================================
+graph:
+  unified_graph_path: "./data/processed/graphs/unified/unified_knowledge_graph.json"
+  vector_store_path: "./data/processed/vector_store"  # 루트 경로
+  graphs_directory: "./data/processed/graphs"
+  cache_enabled: true
+  cache_ttl_hours: 24
 
 # ============================================================================
 # 성능 최적화 (서버 환경)

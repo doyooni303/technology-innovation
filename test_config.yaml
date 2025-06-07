@@ -7,10 +7,12 @@ graph:
   unified_graph_path: ./graphs/unified/unified_knowledge_graph.json
   vector_store_path: ./graphs/embeddings
 llm:
-  max_tokens: 2000
-  model_name: gpt-4
-  provider: openai
+  device_map: auto
+  max_new_tokens: 2048
+  model_path: /DATA/MODELS/models--meta-llama--Llama-3.1-8B-Instruct
+  provider: huggingface_local
   temperature: 0.1
+  torch_dtype: bfloat16
 qa:
   chain_type: retrieval_qa
   enable_memory: false

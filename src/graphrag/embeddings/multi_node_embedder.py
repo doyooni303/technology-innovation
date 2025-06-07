@@ -508,10 +508,14 @@ class MultiNodeEmbedder:
         embedding_results: Dict[str, List[EmbeddingResult]],
         output_dir: str,
         formats: List[str] = ["numpy", "json"],
+        vector_store_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Path]:
-        """임베딩 결과를 다양한 형태로 저장"""
+        """임베딩 결과를 다양한 형태로 저장 - 새로운 경로 구조 지원"""
         output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 새로운 경로 구조: embeddings 서브폴더 생성
+        embeddings_dir = output_dir / "embeddings"
+        embeddings_dir.mkdir(parents=True, exist_ok=True)
 
         saved_files = {}
 
@@ -543,9 +547,9 @@ class MultiNodeEmbedder:
             failed_nodes=[],
         )
 
-        logger.info(f"💾 Saving embeddings to {output_dir}")
+        logger.info(f"💾 Saving embeddings to {embeddings_dir}")
 
-        # 1. NumPy 형태 저장 (벡터 검색용)
+        # 1. NumPy 형태 저장 (벡터 검색용) - embeddings 폴더에 저장
         if "numpy" in formats:
             embeddings_array = []
             node_ids = []
@@ -559,36 +563,36 @@ class MultiNodeEmbedder:
 
             embeddings_array = np.array(embeddings_array)
 
-            # 배열 저장
-            np.save(output_dir / "embeddings.npy", embeddings_array)
-            np.save(output_dir / "node_ids.npy", np.array(node_ids))
-            np.save(output_dir / "node_types.npy", np.array(node_types))
+            # 배열 저장 (embeddings 서브폴더에)
+            np.save(embeddings_dir / "embeddings.npy", embeddings_array)
+            np.save(embeddings_dir / "node_ids.npy", np.array(node_ids))
+            np.save(embeddings_dir / "node_types.npy", np.array(node_types))
 
-            saved_files["numpy_embeddings"] = output_dir / "embeddings.npy"
-            saved_files["numpy_node_ids"] = output_dir / "node_ids.npy"
-            saved_files["numpy_node_types"] = output_dir / "node_types.npy"
+            saved_files["numpy_embeddings"] = embeddings_dir / "embeddings.npy"
+            saved_files["numpy_node_ids"] = embeddings_dir / "node_ids.npy"
+            saved_files["numpy_node_types"] = embeddings_dir / "node_types.npy"
 
-        # 2. JSON 메타데이터 저장
+        # 2. JSON 메타데이터 저장 (embeddings 폴더에)
         if "json" in formats:
             # 메타데이터만 (임베딩 제외)
             metadata_dict = {}
             for node_type, results in embedding_results.items():
                 metadata_dict[node_type] = [result.to_dict() for result in results]
 
-            metadata_file = output_dir / "embeddings_metadata.json"
+            metadata_file = embeddings_dir / "embeddings_metadata.json"
             with open(metadata_file, "w", encoding="utf-8") as f:
                 json.dump(metadata_dict, f, ensure_ascii=False, indent=2)
 
             saved_files["metadata"] = metadata_file
 
-        # 3. 통계 정보 저장
-        stats_file = output_dir / "embedding_statistics.json"
+        # 3. 통계 정보 저장 (embeddings 폴더에)
+        stats_file = embeddings_dir / "embedding_statistics.json"
         with open(stats_file, "w", encoding="utf-8") as f:
             json.dump(stats.to_dict(), f, ensure_ascii=False, indent=2)
 
         saved_files["statistics"] = stats_file
 
-        # 4. 인덱스 파일 생성 (검색용)
+        # 4. 인덱스 파일 생성 (검색용) - embeddings 폴더에
         index_data = {
             "node_id_to_index": {node_id: idx for idx, node_id in enumerate(node_ids)},
             "index_to_node_id": {idx: node_id for idx, node_id in enumerate(node_ids)},
@@ -597,20 +601,54 @@ class MultiNodeEmbedder:
             },
             "embedding_dimension": embedding_dim,
             "total_nodes": total_nodes,
+            "created_at": pd.Timestamp.now().isoformat(),
+            "model_info": stats.model_info,
         }
 
-        index_file = output_dir / "node_index.json"
+        index_file = embeddings_dir / "node_index.json"
         with open(index_file, "w", encoding="utf-8") as f:
             json.dump(index_data, f, ensure_ascii=False, indent=2)
 
         saved_files["index"] = index_file
+
+        # 5. 벡터 저장소 설정 정보 저장 (루트에)
+        if vector_store_config:
+            vs_config_file = output_dir / "vector_store_config.json"
+            with open(vs_config_file, "w", encoding="utf-8") as f:
+                json.dump(vector_store_config, f, ensure_ascii=False, indent=2)
+            saved_files["vector_store_config"] = vs_config_file
+
+        # 6. 경로 정보 파일 생성 (디렉토리 구조 문서화)
+        path_info = {
+            "structure": {
+                "root": str(output_dir),
+                "embeddings": str(embeddings_dir),
+                "vector_stores": {
+                    "faiss": str(output_dir / "faiss"),
+                    "chromadb": str(output_dir / "chromadb"),
+                    "simple": str(output_dir / "simple"),
+                },
+            },
+            "files": {name: str(path) for name, path in saved_files.items()},
+            "created_at": pd.Timestamp.now().isoformat(),
+        }
+
+        path_info_file = output_dir / "directory_structure.json"
+        with open(path_info_file, "w", encoding="utf-8") as f:
+            json.dump(path_info, f, ensure_ascii=False, indent=2)
+        saved_files["path_info"] = path_info_file
 
         logger.info(f"✅ Embeddings saved successfully:")
         for format_name, file_path in saved_files.items():
             file_size = (
                 file_path.stat().st_size / 1024 / 1024 if file_path.exists() else 0
             )
-            logger.info(f"   📄 {format_name}: {file_path} ({file_size:.1f} MB)")
+            logger.info(f"   📄 {format_name}: {file_path.name} ({file_size:.1f} MB)")
+
+        logger.info(f"📁 Directory structure created:")
+        logger.info(f"   📂 Root: {output_dir}")
+        logger.info(f"   📂 Embeddings: {embeddings_dir}")
+        logger.info(f"   📂 Ready for vector stores: faiss/, chromadb/, simple/")
 
         return saved_files
 
@@ -621,8 +659,9 @@ class MultiNodeEmbedder:
         use_cache: bool = True,
         save_formats: List[str] = ["numpy", "json"],
         show_progress: bool = True,
+        vector_store_config: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, List[EmbeddingResult]], Dict[str, Path]]:
-        """전체 파이프라인 실행"""
+        """전체 파이프라인 실행 - 새로운 경로 구조 지원"""
 
         logger.info("🚀 Starting MultiNodeEmbedder full pipeline...")
 
@@ -634,11 +673,12 @@ class MultiNodeEmbedder:
             node_types=node_types, use_cache=use_cache, show_progress=show_progress
         )
 
-        # 3. 결과 저장
+        # 3. 결과 저장 (새로운 경로 구조 사용)
         saved_files = self.save_embeddings(
             embedding_results=embedding_results,
             output_dir=output_dir,
             formats=save_formats,
+            vector_store_config=vector_store_config,
         )
 
         # 4. 요약 출력
@@ -650,11 +690,82 @@ class MultiNodeEmbedder:
         logger.info(f"   📄 Total nodes embedded: {total_nodes:,}")
         logger.info(f"   📏 Embedding dimension: {embedding_dim}")
         logger.info(f"   💾 Output directory: {output_dir}")
+        logger.info(f"   📂 Embeddings saved to: {output_dir}/embeddings/")
 
         for node_type, results in embedding_results.items():
             logger.info(f"   📝 {node_type}: {len(results):,} embeddings")
 
         return embedding_results, saved_files
+
+
+# 새로운 헬퍼 함수 추가
+def create_embedder_with_config(
+    unified_graph_path: str,
+    config_manager,  # 타입 힌트 제거 (순환 import 방지)
+    **kwargs,
+) -> "MultiNodeEmbedder":
+    """설정 관리자를 사용하여 임베더 생성"""
+
+    # 임베딩 설정 가져오기
+    embedding_config = config_manager.get_embeddings_config()
+
+    # kwargs에서 중복될 수 있는 키들 제거
+    filtered_kwargs = kwargs.copy()
+
+    # 설정에서 가져온 값들로 기본값 설정 (kwargs가 우선)
+    embedder_params = {
+        "unified_graph_path": unified_graph_path,
+        "embedding_model": embedding_config["model_name"],
+        "batch_size": embedding_config["batch_size"],
+        "max_text_length": embedding_config["max_length"],
+        "language": "mixed",
+        "cache_dir": embedding_config["cache_dir"],
+        "device": embedding_config["device"],
+    }
+
+    # kwargs로 덮어쓰기 (kwargs가 우선순위 높음)
+    embedder_params.update(filtered_kwargs)
+
+    # 임베더 초기화
+    embedder = MultiNodeEmbedder(**embedder_params)
+
+    return embedder
+
+
+def run_embedding_pipeline_with_config(
+    config_manager: "GraphRAGConfigManager",
+    force_rebuild: bool = False,
+    show_progress: bool = True,
+) -> Tuple[Dict[str, List[EmbeddingResult]], Dict[str, Path]]:
+    """설정 관리자를 사용한 완전 자동화 파이프라인"""
+
+    logger.info("🚀 Starting automated embedding pipeline with config...")
+
+    # 1. 필요한 디렉토리 생성
+    config_manager.create_directories()
+
+    # 2. 설정에서 경로 정보 가져오기
+    graph_path = config_manager.config.graph.unified_graph_path
+    output_dir = config_manager.config.graph.vector_store_path
+
+    # 3. 임베더 생성
+    embedder = create_embedder_with_config(graph_path, config_manager)
+
+    # 4. 벡터 저장소 설정 가져오기
+    vector_store_config = config_manager.get_vector_store_config()
+
+    # 5. 파이프라인 실행
+    embedding_results, saved_files = embedder.run_full_pipeline(
+        output_dir=output_dir,
+        use_cache=not force_rebuild,
+        show_progress=show_progress,
+        vector_store_config=vector_store_config,
+    )
+
+    logger.info("✅ Automated embedding pipeline completed!")
+    logger.info(f"📂 Files saved to: {output_dir}")
+
+    return embedding_results, saved_files
 
 
 def main():

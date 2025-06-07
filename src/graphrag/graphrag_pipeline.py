@@ -403,7 +403,7 @@ class GraphRAGPipeline:
             self.state.components_loaded["llm_manager"] = False
 
     def _ensure_embeddings_loaded(self) -> None:
-        """임베딩 시스템 로드 확인"""
+        """임베딩 시스템 로드 확인 - 벡터 저장소 연동 개선"""
         if self.embeddings_loaded:
             return
 
@@ -412,31 +412,81 @@ class GraphRAGPipeline:
         # 설정 가져오기
         config = self.config_manager.config
 
-        # 임베딩 생성기 초기화
+        # 통합 그래프 파일 확인
         unified_graph_path = config.graph.unified_graph_path
         if not Path(unified_graph_path).exists():
             raise FileNotFoundError(f"Unified graph not found: {unified_graph_path}")
 
         # 벡터 저장소 경로 확인
-        vector_store_path = config.graph.vector_store_path
-        if not Path(vector_store_path).exists():
-            logger.warning(f"Vector store not found: {vector_store_path}")
+        vector_store_root = config.graph.vector_store_path
+        if not Path(vector_store_root).exists():
+            logger.warning(f"Vector store root not found: {vector_store_root}")
             logger.info("💡 Run build_embeddings() first to create vector store")
             return
 
-        # 서브그래프 추출기 초기화
-        self.subgraph_extractor = SubgraphExtractor(
-            unified_graph_path=unified_graph_path,
-            vector_store_path=vector_store_path,
-            embedding_model=config.embedding.model_name,
-            device=config.embedding.device,
-        )
+        # 벡터 저장소 설정 가져오기
+        vector_store_config = self.config_manager.get_vector_store_config()
+        store_directory = vector_store_config["persist_directory"]
 
-        self.embeddings_loaded = True
-        logger.info("✅ Embeddings system loaded")
+        logger.info(f"📂 Vector store directory: {store_directory}")
+        logger.info(f"📂 Store type: {vector_store_config['store_type']}")
+
+        # 벡터 저장소 로드 또는 생성
+        try:
+            from .embeddings.vector_store_manager import create_vector_store_from_config
+
+            self.vector_store = create_vector_store_from_config(
+                config_manager=self.config_manager
+            )
+
+            # 벡터 저장소가 비어있으면 임베딩에서 로드 시도
+            if self.vector_store.store.total_vectors == 0:
+                embeddings_dir = config.paths.vector_store_embeddings
+
+                if (
+                    Path(embeddings_dir).exists()
+                    and (Path(embeddings_dir) / "embeddings.npy").exists()
+                ):
+                    logger.info("🔄 Loading from saved embeddings...")
+                    self.vector_store.load_from_saved_embeddings(vector_store_root)
+                else:
+                    logger.warning(f"No vector data found in: {store_directory}")
+                    logger.warning(f"No embeddings found in: {embeddings_dir}")
+                    logger.info("💡 Run build_embeddings() first")
+                    return
+
+            logger.info(
+                f"✅ Vector store loaded: {self.vector_store.store.total_vectors:,} vectors"
+            )
+
+            # SubgraphExtractor 초기화 - VectorStoreManager 인스턴스 직접 전달
+            self.subgraph_extractor = SubgraphExtractor(
+                unified_graph_path=unified_graph_path,
+                vector_store_path=store_directory,  # 경로만 전달
+                embedding_model=config.embedding.model_name,
+                device=config.embedding.device,
+            )
+
+            # SubgraphExtractor의 벡터 저장소를 수동으로 설정
+            self.subgraph_extractor.vector_store = self.vector_store
+
+            self.embeddings_loaded = True
+            logger.info("✅ Embeddings system loaded successfully")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to load embeddings system: {e}")
+            logger.error(f"   Store directory: {store_directory}")
+            logger.error(f"   Store exists: {Path(store_directory).exists()}")
+
+            # 디버깅 정보
+            if Path(store_directory).exists():
+                files = list(Path(store_directory).glob("*"))
+                logger.error(f"   Files in store: {[f.name for f in files]}")
+
+            raise
 
     def build_embeddings(self, force_rebuild: bool = False) -> Dict[str, Any]:
-        """임베딩 생성 및 벡터 저장소 구축"""
+        """임베딩 생성 및 벡터 저장소 구축 - 새로운 경로 구조 사용"""
         logger.info("🏗️ Building embeddings and vector store...")
 
         if self.state.status != PipelineStatus.READY:
@@ -444,33 +494,42 @@ class GraphRAGPipeline:
 
         config = self.config_manager.config
 
-        # 임베딩 생성기 초기화
-        self.embedder = MultiNodeEmbedder(
+        # 필요한 디렉토리 생성
+        self.config_manager.create_directories()
+
+        # 임베딩 생성기 초기화 (설정 관리자 사용)
+        from .embeddings.multi_node_embedder import create_embedder_with_config
+
+        self.embedder = create_embedder_with_config(
             unified_graph_path=config.graph.unified_graph_path,
-            embedding_model=config.embedding.model_name,
-            batch_size=config.embedding.batch_size,
-            max_text_length=config.embedding.max_length,
-            language="mixed",
-            cache_dir=(
-                config.paths.embeddings_cache if hasattr(config, "paths") else None
-            ),
+            config_manager=self.config_manager,
             device=config.embedding.device,
         )
 
-        # 임베딩 생성
+        # 벡터 저장소 설정 가져오기
+        vector_store_config = self.config_manager.get_vector_store_config()
+
+        # 임베딩 생성 (새로운 경로 구조로)
         embedding_results, saved_files = self.embedder.run_full_pipeline(
-            output_dir=config.graph.vector_store_path,
+            output_dir=config.graph.vector_store_path,  # 루트 디렉토리
             use_cache=not force_rebuild,
             show_progress=True,
+            vector_store_config=vector_store_config,
         )
 
-        # 벡터 저장소 구축
-        self.vector_store = VectorStoreManager(
-            store_type=getattr(config, "vector_store", {}).get("store_type", "auto"),
-            persist_directory=config.graph.vector_store_path,
+        # 벡터 저장소 구축 (설정 관리자 사용)
+        from .embeddings.vector_store_manager import create_vector_store_from_config
+
+        self.vector_store = create_vector_store_from_config(
+            config_manager=self.config_manager,
+            store_type=vector_store_config["store_type"],
         )
 
-        self.vector_store.load_from_embeddings(embedding_results)
+        # 임베딩 결과로부터 벡터 저장소 로드
+        self.vector_store.load_from_embeddings(
+            embedding_results,
+            embeddings_dir=config.paths.vector_store_embeddings,
+        )
 
         # 통계 반환
         total_nodes = sum(len(results) for results in embedding_results.values())
@@ -479,10 +538,20 @@ class GraphRAGPipeline:
             "total_embeddings": total_nodes,
             "embeddings_by_type": {k: len(v) for k, v in embedding_results.items()},
             "saved_files": {k: str(v) for k, v in saved_files.items()},
-            "vector_store_path": config.graph.vector_store_path,
+            "vector_store_info": self.vector_store.get_store_info(),
+            "path_structure": {
+                "vector_store_root": config.graph.vector_store_path,
+                "embeddings_dir": config.paths.vector_store_embeddings,
+                "store_specific_dir": vector_store_config["persist_directory"],
+            },
         }
 
         logger.info(f"✅ Embeddings built: {total_nodes:,} nodes")
+        logger.info(f"📂 Structure created:")
+        logger.info(f"   Root: {config.graph.vector_store_path}")
+        logger.info(f"   Embeddings: {config.paths.vector_store_embeddings}")
+        logger.info(f"   Vector Store: {vector_store_config['persist_directory']}")
+
         return result
 
     def ask(self, query: str, return_context: bool = False) -> Union[str, QAResult]:
@@ -655,7 +724,7 @@ class GraphRAGPipeline:
         return results
 
     def get_system_status(self) -> Dict[str, Any]:
-        """시스템 상태 확인"""
+        """시스템 상태 확인 - 경로 정보 포함"""
         status = {
             "pipeline_state": self.state.to_dict(),
             "components": self.state.components_loaded,
@@ -664,12 +733,145 @@ class GraphRAGPipeline:
             "memory_usage": self._get_memory_usage(),
         }
 
+        # 설정 관리자 정보
+        if self.config_manager:
+            config = self.config_manager.config
+            status["configuration"] = {
+                "llm_provider": config.llm.provider,
+                "embedding_model": config.embedding.model_name,
+                "vector_store_type": config.vector_store.store_type,
+                "paths": {
+                    "unified_graph": config.graph.unified_graph_path,
+                    "vector_store_root": config.graph.vector_store_path,
+                    "embeddings_dir": config.paths.vector_store_embeddings,
+                    "store_directory": self.config_manager.get_vector_store_config()[
+                        "persist_directory"
+                    ],
+                },
+            }
+
+        # 벡터 저장소 정보
+        if self.vector_store:
+            status["vector_store"] = self.vector_store.get_store_info()
+
         # LLM 상태
         if self.llm_manager:
             status["llm_loaded"] = self.llm_manager.is_loaded
             status["llm_model_path"] = self.llm_manager.config.get("model_path")
 
         return status
+
+    def setup_from_config(
+        self,
+        config_file: str = "graphrag_config.yaml",
+        auto_build_embeddings: bool = False,
+    ) -> Dict[str, Any]:
+        """설정 파일로부터 완전 자동 설정"""
+
+        logger.info(f"🚀 Setting up GraphRAG from config: {config_file}")
+
+        # 설정 파일로 초기화
+        self.config_file = Path(config_file)
+
+        # 설정 및 시스템 초기화
+        self.setup()
+
+        setup_result = {
+            "setup_completed": True,
+            "config_loaded": True,
+            "directories_created": True,
+        }
+
+        # 자동 임베딩 구축
+        if auto_build_embeddings:
+            try:
+                build_result = self.build_embeddings()
+                setup_result.update(
+                    {
+                        "embeddings_built": True,
+                        "embedding_stats": build_result,
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Auto embedding build failed: {e}")
+                setup_result["embeddings_built"] = False
+                setup_result["embedding_error"] = str(e)
+
+        # 시스템 상태 확인
+        status = self.get_system_status()
+        setup_result["system_status"] = status
+
+        logger.info("✅ GraphRAG setup completed!")
+        return setup_result
+
+    def rebuild_vector_store(
+        self,
+        new_store_type: Optional[str] = None,
+        force_rebuild_embeddings: bool = False,
+    ) -> Dict[str, Any]:
+        """벡터 저장소 재구축"""
+
+        logger.info("🔄 Rebuilding vector store...")
+
+        config = self.config_manager.config
+        current_store_type = config.vector_store.store_type
+        target_store_type = new_store_type or current_store_type
+
+        result = {
+            "previous_store_type": current_store_type,
+            "new_store_type": target_store_type,
+            "embeddings_rebuilt": False,
+            "store_migrated": False,
+        }
+
+        # 임베딩 재구축 (필요시)
+        if force_rebuild_embeddings:
+            logger.info("🏗️ Rebuilding embeddings...")
+            build_result = self.build_embeddings(force_rebuild=True)
+            result["embeddings_rebuilt"] = True
+            result["embedding_stats"] = build_result
+
+        # 벡터 저장소 타입 변경 (필요시)
+        if new_store_type and new_store_type != current_store_type:
+            logger.info(f"🔄 Migrating from {current_store_type} to {new_store_type}")
+
+            # 기존 벡터 저장소 로드
+            self._ensure_embeddings_loaded()
+
+            if self.vector_store:
+                # 마이그레이션 수행
+                new_vector_store = self.vector_store.migrate_store_type(new_store_type)
+                self.vector_store = new_vector_store
+
+                # 설정 업데이트
+                self.config_manager.update_config(
+                    **{"vector_store.store_type": new_store_type}
+                )
+
+                result["store_migrated"] = True
+                result["new_store_info"] = self.vector_store.get_store_info()
+
+        logger.info("✅ Vector store rebuild completed!")
+        return result
+
+    @classmethod
+    def from_config_file(
+        cls,
+        config_file: str = "graphrag_config.yaml",
+        auto_setup: bool = True,
+        auto_build_embeddings: bool = False,
+    ) -> "GraphRAGPipeline":
+        """설정 파일로부터 파이프라인 생성 (클래스 메서드)"""
+
+        pipeline = cls(config_file=config_file, auto_setup=False)
+
+        if auto_setup:
+            pipeline.setup_from_config(
+                config_file=config_file,
+                auto_build_embeddings=auto_build_embeddings,
+            )
+
+        return pipeline
 
     def _get_memory_usage(self) -> Dict[str, str]:
         """메모리 사용량 조회"""
@@ -728,6 +930,20 @@ class GraphRAGPipeline:
         self.embeddings_loaded = False
 
         logger.info("✅ Pipeline shutdown completed")
+
+
+def create_graphrag_pipeline(
+    config_file: str = "graphrag_config.yaml",
+    auto_setup: bool = True,
+    auto_build_embeddings: bool = False,
+) -> GraphRAGPipeline:
+    """GraphRAG 파이프라인 생성 편의 함수"""
+
+    return GraphRAGPipeline.from_config_file(
+        config_file=config_file,
+        auto_setup=auto_setup,
+        auto_build_embeddings=auto_build_embeddings,
+    )
 
 
 def main():
