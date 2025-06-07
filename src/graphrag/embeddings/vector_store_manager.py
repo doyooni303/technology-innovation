@@ -751,7 +751,7 @@ class VectorStoreManager:
             if _faiss_available:
                 store_type = "faiss"
             elif _chromadb_available:
-                store_type = "chroma"
+                store_type = "chromadb"
             else:
                 raise ImportError(
                     "No vector store library available. Install chromadb or faiss-cpu"
@@ -791,7 +791,7 @@ class VectorStoreManager:
         Path(actual_persist_dir).mkdir(parents=True, exist_ok=True)
 
         # 벡터 저장소 초기화
-        if store_type == "chroma":
+        if store_type == "chromadb":
             self.store = ChromaVectorStore(self.config)
         elif store_type == "faiss":
             self.store = FAISSVectorStore(self.config)

@@ -96,22 +96,53 @@ class GraphRAGPromptTemplates:
     def __init__(self, config: Optional[PromptConfig] = None):
         """
         Args:
-            config: 프롬프트 설정
+            config: 프롬프트 설정 (PromptConfig 타입이어야 함)
         """
+        # config 타입 검증 및 안전한 처리
+        if config is not None and not isinstance(config, PromptConfig):
+            logger.warning(
+                f"⚠️ Expected PromptConfig, got {type(config)}. Using default config."
+            )
+            config = None
+
         self.config = config or PromptConfig()
 
-        # 언어별 기본 지시문
-        self._load_base_instructions()
+        try:
+            # 언어별 기본 지시문
+            self._load_base_instructions()
 
-        # 쿼리 타입별 템플릿
-        self._load_query_type_templates()
+            # 쿼리 타입별 템플릿
+            self._load_query_type_templates()
 
-        # 복잡도별 템플릿
-        self._load_complexity_templates()
+            # 복잡도별 템플릿
+            self._load_complexity_templates()
 
-        logger.info("✅ GraphRAGPromptTemplates initialized")
-        logger.info(f"   🌐 Language: {self.config.language}")
-        logger.info(f"   🎨 Style: {self.config.style}")
+            logger.info("✅ GraphRAGPromptTemplates initialized")
+            logger.info(f"   🌐 Language: {self.config.language}")
+            logger.info(f"   🎨 Style: {self.config.style}")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize prompt templates: {e}")
+
+            # 최소한의 기본 설정으로라도 동작하도록
+            self.config = PromptConfig()
+
+            # 기본 템플릿들만 설정
+            self.base_instructions = {
+                "mixed": {
+                    "system_role": "You are a helpful AI assistant.",
+                    "task_description": "Please provide accurate answers based on the context.",
+                    "context_explanation": "Context:",
+                    "answer_guidelines": [
+                        "Use the provided context",
+                        "Be accurate",
+                        "Be helpful",
+                    ],
+                    "citation_instruction": "Please cite relevant sources.",
+                }
+            }
+
+            logger.info("✅ GraphRAGPromptTemplates initialized with minimal config")
 
     def _load_base_instructions(self) -> None:
         """기본 지시문 로드"""

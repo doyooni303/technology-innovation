@@ -238,7 +238,7 @@ class SubgraphExtractor:
         logger.info(f"✅ NetworkX graph created")
 
     def load_vector_store(self) -> VectorStoreManager:
-        """벡터 저장소 로드 - 개선된 버전"""
+        """벡터 저장소 로드 - embeddings 폴더 구조 완전 지원"""
         if self.vector_store is not None:
             return self.vector_store
 
@@ -248,31 +248,31 @@ class SubgraphExtractor:
         logger.info(f"📂 Loading vector store from: {self.vector_store_path}")
 
         try:
-            # 벡터 저장소 타입 자동 감지
-            store_type = "auto"
+            # 벡터 저장소 타입 자동 감지 (우선순위 순)
+            store_configs = [
+                ("faiss", self.vector_store_path / "faiss", "faiss_index.bin"),
+                ("chromadb", self.vector_store_path / "chromadb", "chroma.sqlite3"),
+                (
+                    "simple",
+                    self.vector_store_path / "simple",
+                    "simple_vector_store.pkl",
+                ),
+            ]
 
-            # FAISS 파일 확인
-            if (self.vector_store_path / "faiss_index.bin").exists():
-                store_type = "faiss"
-                actual_path = self.vector_store_path
-            # ChromaDB 파일 확인
-            elif (self.vector_store_path / "chroma.sqlite3").exists():
-                store_type = "chroma"
-                actual_path = self.vector_store_path
-            # 서브폴더에서 찾기
-            elif (self.vector_store_path / "faiss" / "faiss_index.bin").exists():
-                store_type = "faiss"
-                actual_path = self.vector_store_path / "faiss"
-            elif (self.vector_store_path / "chromadb" / "chroma.sqlite3").exists():
-                store_type = "chroma"
-                actual_path = self.vector_store_path / "chromadb"
-            else:
-                # 임베딩 파일에서 로드 시도
+            store_type = None
+            actual_path = None
+
+            # 1단계: 직접 경로에서 확인
+            for stype, spath, indicator_file in store_configs:
+                if (spath / indicator_file).exists():
+                    store_type = stype
+                    actual_path = spath
+                    break
+
+            # 2단계: embeddings 폴더에서 구축
+            if not store_type:
                 embeddings_dir = self.vector_store_path / "embeddings"
-                if (
-                    embeddings_dir.exists()
-                    and (embeddings_dir / "embeddings.npy").exists()
-                ):
+                if (embeddings_dir / "embeddings.npy").exists():
                     logger.info("📥 Building vector store from embeddings...")
 
                     # 기본 FAISS로 구축
@@ -292,10 +292,11 @@ class SubgraphExtractor:
 
                     logger.info("✅ Vector store built from embeddings")
                     return self.vector_store
-                else:
-                    raise FileNotFoundError(
-                        f"No vector store or embeddings found in: {self.vector_store_path}"
-                    )
+
+            if not store_type:
+                raise FileNotFoundError(
+                    f"No vector store or embeddings found in: {self.vector_store_path}"
+                )
 
             # 벡터 저장소 로드
             from .vector_store_manager import VectorStoreManager
