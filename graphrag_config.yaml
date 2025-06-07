@@ -67,17 +67,18 @@ embeddings:
 # 벡터 저장소 설정 - ChromaDB (고성능)
 # ============================================================================
 vector_store:
-  store_type: "faiss"  # [faiss, chroma]
+  store_type: "chromadb"  # [faiss, chromadb]
+  batch_size: 128
   
   faiss:
     persist_directory: "./data/processed/vector_store"
     index_type: "flat"    # 정확도 우선
     distance_metric: "cosine"
-    use_gpu: true  # GPU 사용 활성화
+    use_gpu: false  # GPU 사용 활성화
     gpu_id: 0      # 사용할 GPU ID
     gpu_memory_fraction: 0.5
   
-  chroma:
+  chromadb:
     persist_directory: "./data/processed/vector_store"
     collection_name: "graphrag_embeddings"
     distance_metric: "cosine"
