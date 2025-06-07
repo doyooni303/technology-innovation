@@ -742,7 +742,7 @@ class GraphRAGPipeline:
                 "vector_store_type": config.vector_store.store_type,
                 "paths": {
                     "unified_graph": config.graph.unified_graph_path,
-                    "vector_store_root": config.graph.vector_store_path,
+                    "vector_store_root": config.paths.vector_store_root,
                     "embeddings_dir": config.paths.vector_store_embeddings,
                     "store_directory": self.config_manager.get_vector_store_config()[
                         "persist_directory"

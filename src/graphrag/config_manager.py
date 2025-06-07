@@ -47,9 +47,9 @@ class ConfigSource(Enum):
 
 @dataclass
 class LLMConfig:
-    """LLM 설정"""
+    """LLM 설정 - YAML 구조에 맞춤"""
 
-    provider: str = "openai"
+    provider: str = "huggingface_local"  # YAML 기본값에 맞춤
     model_name: str = "gpt-3.5-turbo"
     api_key: Optional[str] = None
     api_base: Optional[str] = None
@@ -58,7 +58,10 @@ class LLMConfig:
     streaming: bool = False
     timeout: int = 60
 
-    model_path: Optional[str] = None  # 로컬 모델 경로
+    # 로컬 모델 설정 (YAML에서 huggingface_local 섹션)
+    model_path: Optional[str] = (
+        "/DATA/MODELS/models--meta-llama--Llama-3.1-8B-Instruct"  # YAML 기본값
+    )
     device_map: str = "auto"  # GPU 할당
     torch_dtype: str = "bfloat16"  # 메모리 효율성
     max_new_tokens: int = 2048  # 생성 토큰 수
@@ -66,34 +69,132 @@ class LLMConfig:
     load_in_8bit: bool = False  # 양자화 옵션
     load_in_4bit: bool = False  # 더 강한 양자화
 
+    # 생성 설정 (YAML에 맞춤)
+    do_sample: bool = True
+    top_p: float = 0.9
+    top_k: int = 50
+    repetition_penalty: float = 1.1
+    batch_size: int = 1
+
 
 @dataclass
 class PathConfig:
-    """경로 설정 클래스"""
+    """경로 설정 클래스 - YAML paths 섹션에 맞춤"""
 
-    # 기본 디렉토리
+    # 기본 디렉토리 (YAML과 일치)
     data_dir: str = "./data"
     processed_dir: str = "./data/processed"
 
-    # 그래프 관련
-    unified_graph: str = ""
-    individual_graphs_dir: str = ""
+    # 그래프 관련 (YAML paths에 맞춤)
+    unified_graph: str = "./data/processed/graphs/unified/unified_knowledge_graph.json"
+    individual_graphs_dir: str = "./data/processed/graphs"
 
-    # 벡터 저장소 구조
+    # 벡터 저장소 구조 (YAML vector_store 섹션과 일치)
     vector_store_root: str = "./data/processed/vector_store"
     vector_store_embeddings: str = "./data/processed/vector_store/embeddings"
     vector_store_faiss: str = "./data/processed/vector_store/faiss"
     vector_store_chromadb: str = "./data/processed/vector_store/chromadb"
     vector_store_simple: str = "./data/processed/vector_store/simple"
 
-    # 캐시 디렉토리
+    # 캐시 디렉토리 (YAML과 일치)
     cache_dir: str = "./cache"
     embeddings_cache: str = "./cache/embeddings"
     query_cache: str = "./cache/queries"
     logs_dir: str = "./logs"
 
-    # 서버 모델 경로
+    # 서버 모델 경로 (YAML과 일치)
     models_dir: str = "/DATA/MODELS"
+
+
+@dataclass
+class EmbeddingConfig:
+    """임베딩 설정 - YAML embeddings 섹션에 맞춤"""
+
+    model_type: str = "sentence-transformers"  # YAML 기본값
+    model_name: str = "paraphrase-multilingual-mpnet-base-v2"  # YAML 기본값
+    device: str = "auto"
+    batch_size: int = 32
+    max_length: int = 512
+    cache_dir: str = "./cache/embeddings"
+
+    # 임베딩 파일 저장 경로 (YAML과 일치)
+    save_directory: str = "./data/processed/vector_store/embeddings"
+
+
+@dataclass
+class VectorStoreConfig:
+    """벡터 저장소 설정 - YAML vector_store 섹션에 맞춤"""
+
+    store_type: str = "faiss"  # YAML 기본값
+    persist_directory: str = "./data/processed/vector_store"  # YAML 루트 경로
+    collection_name: str = "graphrag_embeddings"
+    distance_metric: str = "cosine"
+    index_type: str = "flat"
+    batch_size: int = 128  # YAML 값에 맞춤
+    cache_size: int = 10000
+
+    # 중첩 구조 저장소별 설정 (YAML에서 로드)
+    faiss: Optional[Dict[str, Any]] = None
+    chromadb: Optional[Dict[str, Any]] = None
+    simple: Optional[Dict[str, Any]] = None
+
+    # 기존 평면화된 속성들 (하위 호환성용)
+    faiss_directory: str = "./data/processed/vector_store/faiss"
+    chromadb_directory: str = "./data/processed/vector_store/chromadb"
+    simple_directory: str = "./data/processed/vector_store/simple"
+
+    # FAISS 관련 설정들 (YAML 기본값에 맞춤)
+    faiss_index_type: str = "flat"
+    faiss_distance_metric: str = "cosine"
+    use_gpu: bool = False  # YAML에서 개발 단계는 CPU 사용
+    gpu_id: int = 0
+    gpu_memory_fraction: float = 0.5
+
+    # ChromaDB 관련 설정들
+    chromadb_collection_name: str = "graphrag_embeddings"
+    chromadb_distance_metric: str = "cosine"
+
+    def __post_init__(self):
+        """서브 디렉토리 자동 설정 - 중첩 구조와 평면 구조 모두 지원"""
+        # 중첩 구조에서 평면 구조로 변환 (필요시)
+        if self.faiss and isinstance(self.faiss, dict):
+            self.faiss_directory = self.faiss.get(
+                "persist_directory", f"{self.persist_directory}/faiss"
+            )
+            self.faiss_index_type = self.faiss.get("index_type", "flat")
+            self.faiss_distance_metric = self.faiss.get("distance_metric", "cosine")
+            self.use_gpu = self.faiss.get("use_gpu", False)
+            self.gpu_id = self.faiss.get("gpu_id", 0)
+            self.gpu_memory_fraction = self.faiss.get("gpu_memory_fraction", 0.5)
+
+        if self.chromadb and isinstance(self.chromadb, dict):
+            self.chromadb_directory = self.chromadb.get(
+                "persist_directory", f"{self.persist_directory}/chromadb"
+            )
+            self.chromadb_collection_name = self.chromadb.get(
+                "collection_name", "graphrag_embeddings"
+            )
+            self.chromadb_distance_metric = self.chromadb.get(
+                "distance_metric", "cosine"
+            )
+
+        if self.simple and isinstance(self.simple, dict):
+            self.simple_directory = self.simple.get(
+                "persist_directory", f"{self.persist_directory}/simple"
+            )
+
+
+@dataclass
+class GraphConfig:
+    """그래프 설정 - YAML graph 섹션에 맞춤"""
+
+    unified_graph_path: str = (
+        "./data/processed/graphs/unified/unified_knowledge_graph.json"
+    )
+    vector_store_path: str = "./data/processed/vector_store"  # 루트 경로
+    graphs_directory: str = "./data/processed/graphs"
+    cache_enabled: bool = True
+    cache_ttl_hours: int = 24
 
 
 @dataclass
@@ -111,118 +212,43 @@ class QAConfig:
 
 @dataclass
 class SystemConfig:
-    """시스템 설정"""
+    """시스템 설정 - YAML 성능 최적화 섹션 반영"""
 
     log_level: str = "INFO"
     verbose: bool = False
     parallel_processing: bool = True
-    max_workers: int = 4
+    max_workers: int = 4  # YAML performance 섹션과 일치
     temp_directory: str = "./tmp"
     enable_monitoring: bool = False
 
+    # YAML performance 섹션 설정들 추가
+    enable_parallel: bool = True
+    enable_caching: bool = True
+    cache_size_limit: str = "8GB"
+    batch_processing: bool = True
+    memory_limit: str = "16GB"
 
-@dataclass
-class GraphConfig:
-    """그래프 설정 - 경로 개선"""
-
-    unified_graph_path: str = ""
-    vector_store_path: str = ""  # 루트 경로
-    graphs_directory: str = "./graphs"
-    cache_enabled: bool = True
-    cache_ttl_hours: int = 24
-
-    def __post_init__(self):
-        """기본 경로 설정"""
-        if not self.unified_graph_path:
-            self.unified_graph_path = (
-                "./data/processed/graphs/unified/unified_knowledge_graph.json"
-            )
-        if not self.vector_store_path:
-            self.vector_store_path = "./data/processed/vector_store"
-
-
-@dataclass
-class VectorStoreConfig:
-    """벡터 저장소 설정 - 경로 중복 문제 해결"""
-
-    store_type: str
-    persist_directory: Optional[str] = None
-    collection_name: str = "graphrag_embeddings"
-    distance_metric: str = "cosine"
-    index_type: str = "flat"
-    batch_size: int = 1000
-    cache_size: int = 10000
-
-    # 서브폴더 지원
-    faiss_directory: str = ""
-    chromadb_directory: str = ""
-    simple_directory: str = ""
-
-    # FAISS 관련 설정
-    use_gpu: bool = False
-    gpu_id: int = 0
-    gpu_memory_fraction: float = 0.5
-
-    def __post_init__(self):
-        """서브 디렉토리 자동 설정 - 중복 방지"""
-        if self.persist_directory:
-            # 이미 서브폴더가 포함된 경우 체크
-            if not self.faiss_directory:
-                # persist_directory가 이미 /faiss로 끝나면 그대로 사용
-                if self.persist_directory.endswith("/faiss"):
-                    self.faiss_directory = self.persist_directory
-                else:
-                    self.faiss_directory = f"{self.persist_directory}/faiss"
-
-            if not self.chromadb_directory:
-                if self.persist_directory.endswith("/chromadb"):
-                    self.chromadb_directory = self.persist_directory
-                else:
-                    self.chromadb_directory = f"{self.persist_directory}/chromadb"
-
-            if not self.simple_directory:
-                if self.persist_directory.endswith("/simple"):
-                    self.simple_directory = self.persist_directory
-                else:
-                    self.simple_directory = f"{self.persist_directory}/simple"
-
-
-@dataclass
-class EmbeddingConfig:
-    """임베딩 설정 - 저장 경로 분리"""
-
-    model_name: str = "auto"
-    device: str = "auto"
-    batch_size: int = 32
-    max_length: int = 512
-    cache_dir: Optional[str] = None
-
-    # 임베딩 파일 저장 경로 (벡터 저장소와 분리)
-    save_directory: str = "./data/processed/vector_store/embeddings"
-
-    # 모델 타입별 설정
-    model_type: str = "sentence-transformers"
-
-    def __post_init__(self):
-        """기본 캐시 디렉토리 설정"""
-        if not self.cache_dir:
-            self.cache_dir = "./cache/embeddings"
+    # 고급 최적화 (YAML에서)
+    enable_flash_attention: bool = True
+    enable_model_parallelism: bool = True
 
 
 @dataclass
 class GraphRAGConfig:
-    """GraphRAG 전체 설정 - 경로 구조 개선"""
+    """GraphRAG 전체 설정 - YAML 구조에 완전히 맞춤"""
 
-    # 하위 설정들
+    # 하위 설정들 - 기본값들이 YAML과 일치
     llm: LLMConfig = field(default_factory=LLMConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     graph: GraphConfig = field(default_factory=GraphConfig)
     qa: QAConfig = field(default_factory=QAConfig)
     system: SystemConfig = field(default_factory=SystemConfig)
 
-    # 새로운 설정들
+    # 경로 및 벡터 저장소 설정
     paths: PathConfig = field(default_factory=PathConfig)
-    vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
+    vector_store: VectorStoreConfig = field(
+        default_factory=lambda: VectorStoreConfig(store_type="faiss")
+    )
 
     # 메타데이터
     version: str = "1.0.0"
@@ -475,7 +501,10 @@ class GraphRAGConfigManager:
 
     def _dict_to_config(self, config_dict: Dict[str, Any]) -> GraphRAGConfig:
         """딕셔너리를 GraphRAGConfig로 변환 (중첩 구조 지원)"""
+        print(config_dict.keys())
+        import pdb
 
+        pdb.set_trace()
         # LLM 설정 처리 - 중첩 구조 평면화
         llm_data = config_dict.get("llm", {}).copy()
         embedding_data = config_dict.get("embedding", {}).copy()
@@ -533,48 +562,23 @@ class GraphRAGConfigManager:
 
         # 벡터 저장소 설정 처리
         vector_store_data = config_dict.get("vector_store", {}).copy()
-        # 저장소별 설정 평면화
+
+        # YAML에서 로드된 중첩 구조 유지하면서 필요한 필드만 평면화
+        store_type = vector_store_data.get("store_type", "faiss")
+
+        # 각 저장소별 중첩 설정을 attributes로 보존
         if "faiss" in vector_store_data:
-            faiss_config = vector_store_data["faiss"]
-            vector_store_data.update(
-                {
-                    "faiss_directory": faiss_config.get("persist_directory", ""),
-                    "faiss_index_type": faiss_config.get("index_type", "flat"),
-                    "faiss_distance_metric": faiss_config.get(
-                        "distance_metric", "cosine"
-                    ),
-                    "faiss_use_gpu": faiss_config.get("use_gpu", False),
-                    "faiss_gpu_id": faiss_config.get("gpu_id", 0),
-                    "faiss_gpu_memory_fraction": faiss_config.get(
-                        "gpu_memory_fraction", 0.5
-                    ),
-                }
-            )
-            del vector_store_data["faiss"]
-
+            vector_store_data["faiss"] = vector_store_data["faiss"]  # 중첩 구조 보존
         if "chromadb" in vector_store_data:
-            chromadb_config = vector_store_data["chromadb"]
-            vector_store_data.update(
-                {
-                    "chromadb_directory": chromadb_config.get("persist_directory", ""),
-                    "chromadb_collection_name": chromadb_config.get(
-                        "collection_name", "graphrag_embeddings"
-                    ),
-                    "chromadb_distance_metric": chromadb_config.get(
-                        "distance_metric", "cosine"
-                    ),
-                }
-            )
-            del vector_store_data["chromadb"]
-
+            vector_store_data["chromadb"] = vector_store_data[
+                "chromadb"
+            ]  # 중첩 구조 보존
         if "simple" in vector_store_data:
-            simple_config = vector_store_data["simple"]
-            vector_store_data.update(
-                {
-                    "simple_directory": simple_config.get("persist_directory", ""),
-                }
-            )
-            del vector_store_data["simple"]
+            vector_store_data["simple"] = vector_store_data["simple"]  # 중첩 구조 보존
+
+        # 기본값 설정
+        if "store_type" not in vector_store_data:
+            vector_store_data["store_type"] = store_type
 
         # 임베딩에 저장 경로 추가
         if "save_directory" not in embedding_data:
@@ -611,6 +615,7 @@ class GraphRAGConfigManager:
             logger.error(f"❌ VectorStoreConfig creation failed: {e}")
             vector_store_config = VectorStoreConfig()
 
+        print()
         # 나머지 설정들
         graph_config = GraphConfig(**config_dict.get("graph", {}))
         qa_config = QAConfig(**config_dict.get("qa", {}))
@@ -776,7 +781,7 @@ class GraphRAGConfigManager:
     def get_vector_store_config(
         self, store_type: Optional[str] = None
     ) -> Dict[str, Any]:
-        """벡터 저장소 설정을 타입별로 반환 - 경로 중복 방지"""
+        """벡터 저장소 설정을 타입별로 반환 - YAML 중첩 구조 지원"""
 
         if store_type is None:
             store_type = self.config.vector_store.store_type
@@ -788,42 +793,119 @@ class GraphRAGConfigManager:
         }
 
         if store_type == "faiss":
-            # persist_directory 설정 개선
-            faiss_dir = self.config.vector_store.faiss_directory
+            # YAML의 vector_store.faiss 섹션에서 설정 가져오기
+            faiss_config = getattr(self.config.vector_store, "faiss", {})
+
+            # 딕셔너리인 경우와 객체인 경우 모두 처리
+            if isinstance(faiss_config, dict):
+                persist_dir = faiss_config.get(
+                    "persist_directory",
+                    self.config.vector_store.persist_directory + "/faiss",
+                )
+                index_type = faiss_config.get("index_type", "flat")
+                distance_metric = faiss_config.get("distance_metric", "cosine")
+                use_gpu = faiss_config.get("use_gpu", False)
+                gpu_id = faiss_config.get("gpu_id", 0)
+                gpu_memory_fraction = faiss_config.get("gpu_memory_fraction", 0.5)
+            else:
+                # 기본값 사용 (평면화되지 않은 경우)
+                persist_dir = getattr(
+                    self.config.vector_store,
+                    "faiss_directory",
+                    self.config.vector_store.persist_directory + "/faiss",
+                )
+                index_type = getattr(
+                    self.config.vector_store, "faiss_index_type", "flat"
+                )
+                distance_metric = getattr(
+                    self.config.vector_store, "faiss_distance_metric", "cosine"
+                )
+                use_gpu = getattr(self.config.vector_store, "use_gpu", False)
+                gpu_id = getattr(self.config.vector_store, "gpu_id", 0)
+                gpu_memory_fraction = getattr(
+                    self.config.vector_store, "gpu_memory_fraction", 0.5
+                )
+
             # 중복 경로 방지
-            if faiss_dir.endswith("/faiss/faiss"):
-                faiss_dir = faiss_dir.replace("/faiss/faiss", "/faiss")
+            if persist_dir.endswith("/faiss/faiss"):
+                persist_dir = persist_dir.replace("/faiss/faiss", "/faiss")
 
             base_config.update(
                 {
-                    "persist_directory": faiss_dir,
-                    "index_type": self.config.vector_store.faiss_index_type,
-                    "distance_metric": self.config.vector_store.faiss_distance_metric,
-                    "use_gpu": self.config.vector_store.faiss_use_gpu,
-                    "gpu_id": self.config.vector_store.faiss_gpu_id,
-                    "gpu_memory_fraction": self.config.vector_store.faiss_gpu_memory_fraction,
+                    "persist_directory": persist_dir,
+                    "index_type": index_type,
+                    "distance_metric": distance_metric,
+                    "use_gpu": use_gpu,
+                    "gpu_id": gpu_id,
+                    "gpu_memory_fraction": gpu_memory_fraction,
                 }
             )
+
         elif store_type == "chromadb":
-            chromadb_dir = self.config.vector_store.chromadb_directory
-            if chromadb_dir.endswith("/chromadb/chromadb"):
-                chromadb_dir = chromadb_dir.replace("/chromadb/chromadb", "/chromadb")
+            # YAML의 vector_store.chromadb 섹션에서 설정 가져오기
+            chromadb_config = getattr(self.config.vector_store, "chromadb", {})
+
+            if isinstance(chromadb_config, dict):
+                persist_dir = chromadb_config.get(
+                    "persist_directory",
+                    self.config.vector_store.persist_directory + "/chromadb",
+                )
+                collection_name = chromadb_config.get(
+                    "collection_name", "graphrag_embeddings"
+                )
+                distance_metric = chromadb_config.get("distance_metric", "cosine")
+            else:
+                # 기본값 사용
+                persist_dir = getattr(
+                    self.config.vector_store,
+                    "chromadb_directory",
+                    self.config.vector_store.persist_directory + "/chromadb",
+                )
+                collection_name = getattr(
+                    self.config.vector_store,
+                    "chromadb_collection_name",
+                    "graphrag_embeddings",
+                )
+                distance_metric = getattr(
+                    self.config.vector_store, "chromadb_distance_metric", "cosine"
+                )
+
+            # 중복 경로 방지
+            if persist_dir.endswith("/chromadb/chromadb"):
+                persist_dir = persist_dir.replace("/chromadb/chromadb", "/chromadb")
 
             base_config.update(
                 {
-                    "persist_directory": chromadb_dir,
-                    "collection_name": self.config.vector_store.chromadb_collection_name,
-                    "distance_metric": self.config.vector_store.chromadb_distance_metric,
+                    "persist_directory": persist_dir,
+                    "collection_name": collection_name,
+                    "distance_metric": distance_metric,
                 }
             )
+
         elif store_type == "simple":
-            simple_dir = self.config.vector_store.simple_directory
-            if simple_dir.endswith("/simple/simple"):
-                simple_dir = simple_dir.replace("/simple/simple", "/simple")
+            # YAML의 vector_store.simple 섹션에서 설정 가져오기
+            simple_config = getattr(self.config.vector_store, "simple", {})
+
+            if isinstance(simple_config, dict):
+                persist_dir = simple_config.get(
+                    "persist_directory",
+                    self.config.vector_store.persist_directory + "/simple",
+                )
+            else:
+                # 기본값 사용
+                persist_dir = getattr(
+                    self.config.vector_store,
+                    "simple_directory",
+                    self.config.vector_store.persist_directory + "/simple",
+                )
+
+            # 중복 경로 방지
+            if persist_dir.endswith("/simple/simple"):
+                persist_dir = persist_dir.replace("/simple/simple", "/simple")
 
             base_config.update(
                 {
-                    "persist_directory": simple_dir,
+                    "persist_directory": persist_dir,
                 }
             )
 

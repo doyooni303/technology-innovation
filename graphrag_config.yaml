@@ -29,7 +29,7 @@ llm:
     trust_remote_code: true
     
     # 배치 처리
-    batch_size: 1  # 메모리 안전
+    batch_size: 32  # 메모리 안전
 
   openai:
     api_key: "${OPENAI_API_KEY}"
