@@ -148,20 +148,31 @@ class LocalLLMManager:
         self.is_loaded = False
 
     def load_model(self) -> None:
-        """모델 로드"""
+        """모델 로드 - HuggingFace ID 지원"""
         if not _transformers_available:
             raise ImportError("Transformers not available for local LLM")
 
         model_path = self.config.get("model_path")
-        # if not model_path or not Path(model_path).exists():
-        #     raise FileNotFoundError(f"Model not found: {model_path}")
 
-        logger.info(f"🤖 Loading local LLM: {model_path}")
+        logger.info(f"🤖 Loading model: {model_path}")
 
-        # try:
+        # ✅ HuggingFace ID vs 로컬 경로 구분
+        if "/" in model_path and not model_path.startswith("/"):
+            # HuggingFace Hub에서 다운로드
+            logger.info(f"📥 Downloading from HuggingFace Hub: {model_path}")
+            use_auth_token = os.getenv("HUGGINGFACE_TOKEN")  # 필요시 토큰 사용
+        else:
+            # 로컬 경로 검증
+            if not Path(model_path).exists():
+                raise FileNotFoundError(f"Local model not found: {model_path}")
+            logger.info(f"📂 Loading from local path: {model_path}")
+            use_auth_token = None
+
         # 토크나이저 로드
         self.tokenizer = AutoTokenizer.from_pretrained(
-            model_path, trust_remote_code=self.config.get("trust_remote_code", True)
+            model_path,
+            trust_remote_code=self.config.get("trust_remote_code", True),
+            use_auth_token=use_auth_token,
         )
 
         # 패딩 토큰 설정
@@ -362,32 +373,49 @@ class GraphRAGPipeline:
             self.setup()
 
     def enable_qa_chain_optimization(self) -> None:
-        """QA Chain 최적화 활성화 (기존 ask 메서드 교체)"""
-
-        if not _qa_chain_available:
-            logger.warning("⚠️ QA Chain not available, keeping original ask method")
-            return
-
-        if not hasattr(self, "_original_ask"):
-            logger.info("🚀 Enabling QA Chain optimization...")
-
-            # 원본 메서드 백업
-            self._original_ask = self.ask
-
-            # try:
-            # QA Chain으로 교체
-            optimized_pipeline = replace_pipeline_llm_with_qa_chain(self)
-            self.ask = optimized_pipeline.ask
-            self._qa_chain = getattr(optimized_pipeline, "_qa_chain", None)
-
-            logger.info("✅ QA Chain optimization enabled successfully")
-            logger.info(
-                "💡 Use pipeline.ask() as usual - now with LangChain optimization!"
+        """QA Chain 최적화 활성화"""
+        try:
+            # ✅ 지연 import
+            from .langchain.qa_chain_builder import (
+                create_qa_chain_from_pipeline,
+                validate_qa_chain_integration,  # ✅ 현재 함수를 그대로 사용
             )
 
-        # except Exception as e:
-        #     logger.error(f"❌ Failed to enable QA Chain optimization: {e}")
-        #     logger.info("🔄 Keeping original ask method")
+            # 검증 먼저 수행
+            validation = validate_qa_chain_integration(self.config_manager)
+            if validation.get("status") not in ["ready", "partial"]:
+                logger.warning("⚠️ QA Chain not ready for activation")
+                logger.warning(f"   Status: {validation.get('status')}")
+                if validation.get("recommendations"):
+                    logger.warning("   Recommendations:")
+                    for rec in validation["recommendations"][:3]:
+                        logger.warning(f"      • {rec}")
+                return
+
+            if not hasattr(self, "_original_ask"):
+                # 원본 메서드 백업
+                self._original_ask = self.ask
+
+                # QA Chain으로 교체
+                optimized_pipeline = replace_pipeline_llm_with_qa_chain(self)
+                self.ask = optimized_pipeline.ask
+                self._qa_chain = getattr(optimized_pipeline, "_qa_chain", None)
+
+                logger.info("✅ QA Chain optimization enabled successfully")
+                logger.info(
+                    "💡 Use pipeline.ask() as usual - now with LangChain optimization!"
+                )
+            else:
+                logger.info("ℹ️ QA Chain optimization already enabled")
+
+        except ImportError as e:
+            logger.warning(f"⚠️ QA Chain not available: {e}")
+            logger.info("🔄 Keeping original ask method")
+            return
+        except Exception as e:
+            logger.error(f"❌ Failed to enable QA Chain optimization: {e}")
+            logger.info("🔄 Keeping original ask method")
+            return
 
     def disable_qa_chain_optimization(self) -> None:
         """QA Chain 최적화 비활성화 (원본 ask 메서드 복원)"""
@@ -407,10 +435,15 @@ class GraphRAGPipeline:
 
         if hasattr(self, "_qa_chain") and self._qa_chain:
             try:
-                return self._qa_chain._llm.get_usage_stats()
+                # ✅ _llm 대신 llm 사용
+                if hasattr(self._qa_chain, "llm") and hasattr(
+                    self._qa_chain.llm, "get_usage_stats"
+                ):
+                    return self._qa_chain.llm.get_usage_stats()
+                else:
+                    return {"message": "LLM stats not available"}
             except Exception as e:
                 logger.warning(f"⚠️ Could not get QA Chain stats: {e}")
-
         return None
 
     def validate_qa_chain_integration(self) -> Dict[str, Any]:
@@ -466,43 +499,41 @@ class GraphRAGPipeline:
             raise
 
     def _check_qa_chain_availability(self) -> None:
-        """QA Chain 최적화 가용성 확인 (새로 추가할 메서드)"""
+        """QA Chain 최적화 가용성 확인"""
         logger.info("🔍 Checking QA Chain optimization availability...")
 
-        if _qa_chain_available:
-            try:
-                validation = self.validate_qa_chain_integration()
-                status = validation.get("status", "unknown")
+        try:
+            # ✅ 지연 import로 순환 import 방지
+            from .langchain.qa_chain_builder import validate_qa_chain_integration
 
-                if status == "ready":
-                    logger.info("🎯 QA Chain optimization ready for activation")
-                    logger.info(
-                        "💡 Call pipeline.enable_qa_chain_optimization() to activate"
-                    )
-                    self.state.components_loaded["qa_chain_ready"] = True
-                elif status == "partial":
-                    logger.info(
-                        "⚠️ QA Chain partially available - some components missing"
-                    )
-                    self.state.components_loaded["qa_chain_ready"] = False
+            validation = validate_qa_chain_integration(self.config_manager)
+            status = validation.get("status", "unknown")
 
-                    # 권장사항 출력
-                    recommendations = validation.get("recommendations", [])
-                    if recommendations:
-                        logger.info("📋 Recommendations:")
-                        for rec in recommendations[:3]:  # 최대 3개만
-                            logger.info(f"   • {rec}")
-                else:
-                    logger.info(f"ℹ️ QA Chain integration status: {status}")
-                    self.state.components_loaded["qa_chain_ready"] = False
-
-            except Exception as e:
-                logger.debug(f"QA Chain validation failed: {e}")
+            if status == "ready":
+                logger.info("🎯 QA Chain optimization ready for activation")
+                logger.info(
+                    "💡 Call pipeline.enable_qa_chain_optimization() to activate"
+                )
+                self.state.components_loaded["qa_chain_ready"] = True
+            elif status == "partial":
+                logger.info("⚠️ QA Chain partially available - some components missing")
                 self.state.components_loaded["qa_chain_ready"] = False
-        else:
-            logger.info(
-                "ℹ️ QA Chain optimization not available (components not imported)"
-            )
+
+                # 권장사항 출력
+                recommendations = validation.get("recommendations", [])
+                if recommendations:
+                    logger.info("📋 Recommendations:")
+                    for rec in recommendations[:3]:  # 최대 3개만
+                        logger.info(f"   • {rec}")
+            else:
+                logger.info(f"ℹ️ QA Chain integration status: {status}")
+                self.state.components_loaded["qa_chain_ready"] = False
+
+        except ImportError as e:
+            logger.warning(f"⚠️ QA Chain not available: {e}")
+            self.state.components_loaded["qa_chain_ready"] = False
+        except Exception as e:
+            logger.debug(f"QA Chain validation failed: {e}")
             self.state.components_loaded["qa_chain_ready"] = False
 
     def _setup_config_manager(self) -> None:

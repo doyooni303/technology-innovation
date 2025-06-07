@@ -34,7 +34,7 @@ try:
     from langchain.chains import RetrievalQA
     from langchain.chains.base import Chain
     from langchain.chains.combine_documents import create_stuff_documents_chain
-    from langchain.chains.retrieval import createretrieval_chain
+    from langchain.chains.retrieval import create_retrieval_chain
     from langchain.chains.conversational_retrieval.base import (
         ConversationalRetrievalChain,
     )
@@ -117,10 +117,6 @@ class QAChainConfig:
 class GraphRAGQAChain(Chain):
     """GraphRAG 특화 QA 체인 (LangChain Chain 상속) - Pydantic 호환"""
 
-    # LangChain Chain 필수 속성들
-    input_keys: List[str] = ["question"]
-    output_keys: List[str] = ["answer"]
-
     # Pydantic 필드로 모든 속성 정의
     retriever: BaseRetriever = Field(description="GraphRAG 커스텀 리트리버")
     llm: BaseLanguageModel = Field(description="언어 모델")
@@ -130,6 +126,15 @@ class GraphRAGQAChain(Chain):
         default=None, description="쿼리 분석기"
     )
     config: Optional[QAChainConfig] = Field(default=None, description="QA 체인 설정")
+
+    # ✅ LangChain Chain 필수 속성들은 @property로
+    @property
+    def input_keys(self) -> List[str]:
+        return ["question", "input"]  # 둘 다 지원
+
+    @property
+    def output_keys(self) -> List[str]:
+        return ["answer"]
 
     # 내부 체인들 (exclude=True로 직렬화에서 제외)
     base_chain: Optional[Any] = Field(default=None, exclude=True)
@@ -178,11 +183,11 @@ class GraphRAGQAChain(Chain):
                 llm=self.llm,
                 prompt=self.prompt_template,
                 document_variable_name="context",
-                verbose=self.config.verbose,
+                # verbose=self.config.verbose,
             )
 
             # 2. 검색 체인 생성
-            self.retrieval_chain = createretrieval_chain(
+            self.retrieval_chain = create_retrieval_chain(
                 retriever=self.retriever, combine_docs_chain=self.base_chain
             )
 
@@ -194,7 +199,7 @@ class GraphRAGQAChain(Chain):
                         retriever=self.retriever,
                         memory=self.memory,
                         return_source_documents=self.config.return_source_documents,
-                        verbose=self.config.verbose,
+                        # verbose=self.config.verbose,
                         combine_docs_chain_kwargs={"prompt": self.prompt_template},
                     )
                     logger.info("✅ Conversational chain initialized")
@@ -216,7 +221,10 @@ class GraphRAGQAChain(Chain):
     ) -> Dict[str, Any]:
         """메인 체인 실행 (LangChain Chain 인터페이스)"""
 
-        question = inputs.get("question", "")
+        question = inputs.get("question", "") or inputs.get(
+            "input", ""
+        )  # ✅ 둘 다 지원
+
         if not question:
             return {"answer": "질문이 제공되지 않았습니다."}
 
@@ -293,39 +301,30 @@ class GraphRAGQAChain(Chain):
             logger.warning(f"⚠️ Conversational QA failed: {e}, falling back to basic QA")
             return self._process_basic_qa(question, run_manager)
 
-    def _process_graph_enhanced_qa(
-        self,
-        question: str,
-        query_analysis: Optional[QueryAnalysisResult],
-        run_manager: Optional[CallbackManagerForChainRun],
-    ) -> Dict[str, Any]:
+    def _process_graph_enhanced_qa(self, question: str, query_analysis, run_manager):
         """GraphRAG 특화 QA 처리"""
 
-        logger.debug("🕸️ Processing graph-enhanced QA")
-
         try:
-            # 1. 동적 프롬프트 생성 (쿼리 분석 결과 활용)
-            if query_analysis and hasattr(self.retriever, "update_config"):
-                # 쿼리 타입에 따른 검색 설정 조정
-                search_config = self._adapt_search_config(query_analysis)
-                self.retriever.update_config(**search_config)
-
-            # 2. 검색 체인 실행
             if self.retrieval_chain:
+                # ✅ 신버전 LangChain 방식
                 result = self.retrieval_chain.invoke({"input": question})
             else:
-                # 검색 체인이 없으면 직접 검색
+                # 직접 검색 방식은 그대로
                 docs = self.retriever.get_relevant_documents(question)
                 context = "\n\n".join([doc.page_content for doc in docs])
 
-                # LLM으로 직접 답변 생성
-                prompt_text = f"컨텍스트: {context}\n\n질문: {question}\n\n답변:"
-                answer = self.llm.invoke(prompt_text)
+                # ✅ 프롬프트 템플릿 변수 맞춤
+                if hasattr(self.prompt_template, "input_variables"):
+                    if "question" in self.prompt_template.input_variables:
+                        prompt_inputs = {"context": context, "question": question}
+                    else:
+                        prompt_inputs = {"context": context, "input": question}
+                else:
+                    prompt_inputs = {"context": context, "question": question}
 
-                result = {
-                    "answer": answer if isinstance(answer, str) else str(answer),
-                    "context": docs,
-                }
+                formatted_prompt = self.prompt_template.format(**prompt_inputs)
+                answer = self.llm.invoke(formatted_prompt)
+                result = {"answer": str(answer), "context": docs}
 
             return {
                 "answer": result.get("answer", ""),
@@ -334,40 +333,32 @@ class GraphRAGQAChain(Chain):
             }
 
         except Exception as e:
-            logger.warning(f"⚠️ Graph-enhanced QA failed: {e}, falling back to basic QA")
+            logger.warning(f"⚠️ Graph-enhanced QA failed: {e}")
             return self._process_basic_qa(question, run_manager)
 
     def _process_basic_qa(
         self, question: str, run_manager: Optional[CallbackManagerForChainRun]
     ) -> Dict[str, Any]:
-        """기본 QA 처리"""
-
-        logger.debug("📝 Processing basic QA")
+        """기본 QA 처리 - 변수명 수정"""
 
         try:
             if self.retrieval_chain:
-                # 검색 체인이 있으면 사용
+                # ✅ LangChain v0.2+ 방식
                 result = self.retrieval_chain.invoke({"input": question})
             else:
-                # 검색 체인이 없으면 직접 처리
                 docs = self.retriever.get_relevant_documents(question)
                 context = "\n\n".join([doc.page_content for doc in docs[:5]])
 
-                # 간단한 프롬프트로 답변 생성
-                prompt_text = f"다음 컨텍스트를 바탕으로 질문에 답변하세요:\n\n컨텍스트: {context}\n\n질문: {question}\n\n답변:"
+                # ✅ 프롬프트 변수 맞춤
+                prompt_inputs = {
+                    "context": context,
+                    "input": question,
+                }  # 'question' → 'input'
+                formatted_prompt = self.prompt_template.format(**prompt_inputs)
 
-                try:
-                    if hasattr(self.llm, "invoke"):
-                        answer = self.llm.invoke(prompt_text)
-                    elif hasattr(self.llm, "_call"):
-                        answer = self.llm._call(prompt_text)
-                    else:
-                        answer = str(self.llm(prompt_text))
-
-                    answer = answer if isinstance(answer, str) else str(answer)
-                except Exception as llm_error:
-                    logger.error(f"❌ LLM call failed: {llm_error}")
-                    answer = "죄송합니다. 답변 생성 중 오류가 발생했습니다."
+                # LLM 호출
+                answer = self.llm.invoke(formatted_prompt)
+                answer = answer if isinstance(answer, str) else str(answer)
 
                 result = {"answer": answer, "context": docs}
 
@@ -639,50 +630,23 @@ class QAChainBuilder:
     def _get_or_create_prompt_template(
         self, config: QAChainConfig
     ) -> BasePromptTemplate:
-        """프롬프트 템플릿 생성 또는 조회 - 간단한 해결책"""
+        """프롬프트 템플릿 생성 - LangChain v0.2+ 호환"""
 
-        if self._prompt_templates is None:
-            logger.info("📝 Creating prompt templates...")
+        from langchain_core.prompts import PromptTemplate
 
-            try:
-                # config 없이 기본값으로 생성
-                self._prompt_templates = GraphRAGPromptTemplates()
-                logger.info("✅ Prompt templates created")
-
-            except Exception as e:
-                logger.warning(f"⚠️ GraphRAGPromptTemplates failed: {e}")
-
-                # 직접 간단한 프롬프트 반환
-                from langchain_core.prompts import PromptTemplate
-
-                template = """다음 컨텍스트를 바탕으로 질문에 답변하세요:
+        # ✅ 신버전 LangChain 호환 (input 변수 사용)
+        template = """다음 컨텍스트를 바탕으로 질문에 답변하세요:
 
     컨텍스트: {context}
 
-    질문: {question}
+    질문: {input}
 
     답변:"""
 
-                return PromptTemplate(
-                    template=template, input_variables=["context", "question"]
-                )
-
-        # 프롬프트 생성 시도
-        try:
-            return self._prompt_templates.create_langchain_prompt()
-        except:
-            # 실패시 기본 프롬프트
-            from langchain_core.prompts import PromptTemplate
-
-            template = """컨텍스트: {context}
-
-    질문: {question}
-
-    답변:"""
-
-            return PromptTemplate(
-                template=template, input_variables=["context", "question"]
-            )
+        return PromptTemplate(
+            template=template,
+            input_variables=["context", "input"],  # ✅ 'question' 대신 'input'
+        )
 
     def _get_or_create_memory(self, config: QAChainConfig) -> BaseMemory:
         """메모리 생성 또는 조회"""
