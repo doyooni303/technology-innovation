@@ -53,13 +53,22 @@ except ImportError:
 # 로깅 설정
 logger = logging.getLogger(__name__)
 
-try:
-    from .langchain.qa_chain_builder import (
-        create_qa_chain_from_pipeline,
-        replace_pipeline_llm_with_qa_chain,
-        validate_qa_chain_integration,
-    )
+# try:
+#     from .langchain.qa_chain_builder import (
+#         create_qa_chain_from_pipeline,
+#         replace_pipeline_llm_with_qa_chain,
+#         validate_qa_chain_integration,
+#     )
 
+#     _qa_chain_available = True
+#     logger.info("✅ QA Chain integration available")
+# except ImportError as e:
+#     _qa_chain_available = False
+#     logger.warning(f"⚠️ QA Chain not available: {e}")
+
+# ✅ 전역 변수는 유지
+try:
+    # 일부 체크만 수행
     _qa_chain_available = True
     logger.info("✅ QA Chain integration available")
 except ImportError as e:
@@ -375,14 +384,17 @@ class GraphRAGPipeline:
     def enable_qa_chain_optimization(self) -> None:
         """QA Chain 최적화 활성화"""
         try:
-            # ✅ 지연 import
+            # ✅ 지연 import만 사용
             from .langchain.qa_chain_builder import (
                 create_qa_chain_from_pipeline,
-                validate_qa_chain_integration,  # ✅ 현재 함수를 그대로 사용
+                replace_pipeline_llm_with_qa_chain,
             )
 
-            # 검증 먼저 수행
+            # 검증도 지연 import로
+            from .langchain.qa_chain_builder import validate_qa_chain_integration
+
             validation = validate_qa_chain_integration(self.config_manager)
+
             if validation.get("status") not in ["ready", "partial"]:
                 logger.warning("⚠️ QA Chain not ready for activation")
                 logger.warning(f"   Status: {validation.get('status')}")

@@ -12,7 +12,8 @@ LangChain 기반 최적화된 QA 체인 구축
 
 import logging
 import warnings
-from typing import Dict, List, Any, Optional, Union, Type, Callable
+from typing import Dict, List, Any, Optional, Union, TYPE_CHECKING
+
 from pathlib import Path
 from pydantic import Field
 from dataclasses import dataclass
@@ -56,11 +57,11 @@ try:
         create_query_prompt,
         create_chat_prompt,
     )
-    from .memory_manager import GraphRAGMemoryManager, create_memory_manager
     from ..query_analyzer import QueryAnalyzer, QueryAnalysisResult
-    from ..graphrag_pipeline import LocalLLMManager
+    from ..graphrag_pipeline import GraphRAGPipeline
 except ImportError as e:
     warnings.warn(f"Some GraphRAG components not available: {e}")
+
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
