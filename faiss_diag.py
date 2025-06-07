@@ -142,47 +142,31 @@ def test_faiss_search_directly(index, metadata):
         return False
 
 
+# faiss_diag.py 파일 수정
 def test_embedding_model():
     """임베딩 모델 테스트"""
-
-    print(f"\n5️⃣ 임베딩 모델 테스트")
-    print("-" * 40)
-
     try:
-        from src.graphrag.embeddings.embedding_models import get_embedding_model
+        # ✅ 수정된 import
+        from src.graphrag.embeddings import create_embedding_model
 
-        # 임베딩 모델 로드
-        print("📥 임베딩 모델 로딩...")
-        model = get_embedding_model("sentence-transformers/all-MiniLM-L6-v2")
+        # get_embedding_model 대신 create_embedding_model 사용
+        model = create_embedding_model(
+            model_name="paraphrase-multilingual-mpnet-base-v2", device="auto"
+        )
 
-        print(f"✅ 모델 로드 성공")
-        print(f"   모델 타입: {type(model)}")
+        # 테스트 임베딩
+        test_text = "This is a test sentence for embedding."
+        embedding = model.encode([test_text])
 
-        # 테스트 인코딩
-        test_texts = ["battery", "machine learning", "neural network"]
-        print(f"\n🧪 테스트 텍스트 인코딩...")
+        print(f"✅ 임베딩 모델 테스트 성공")
+        print(f"   모델: {model}")
+        print(f"   임베딩 차원: {embedding.shape}")
 
-        embeddings = model.encode(test_texts)
-        print(f"✅ 인코딩 성공")
-        print(f"   임베딩 형태: {embeddings.shape}")
-        print(f"   임베딩 타입: {embeddings.dtype}")
-
-        # 정규화 테스트
-        print(f"\n🔄 정규화 테스트...")
-        for i, emb in enumerate(embeddings):
-            norm = np.linalg.norm(emb)
-            print(f"   텍스트 '{test_texts[i]}': norm={norm:.4f}")
-
-            if norm > 0:
-                normalized = emb / norm
-                print(f"     정규화 후 norm: {np.linalg.norm(normalized):.4f}")
-
-        return embeddings
+        return True
 
     except Exception as e:
         print(f"❌ 임베딩 모델 테스트 실패: {e}")
-        traceback.print_exc()
-        return None
+        return False
 
 
 def test_end_to_end_search():

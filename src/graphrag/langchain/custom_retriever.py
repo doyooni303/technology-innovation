@@ -357,46 +357,75 @@ class GraphRAGRetriever(BaseRetriever):
 
         if node_type == "paper":
             title = node_data.get("title", "Unknown Title")
-            abstract = node_data.get("abstract", "")  # ✅ abstract 가져오기
-            abstract = node_data.get("abstract", "")
+            abstract = node_data.get("abstract", "")  # ✅ abstract 가져오기 (한 번만)
             authors = node_data.get("authors", [])
             year = node_data.get("year", "")
             keywords = node_data.get("keywords", [])
 
+            # ✅ None 값들을 안전하게 처리
+            if title is None:
+                title = "Unknown Title"
+            if abstract is None:
+                abstract = ""
+            if year is None:
+                year = ""
+            if authors is None:
+                authors = []
+            if keywords is None:
+                keywords = []
+
             content = f"Paper: {title}"
-            if year:
+            if year and str(year).strip():
                 content += f" ({year})"
             if authors:
                 author_list = authors if isinstance(authors, list) else [authors]
-                content += f"\nAuthors: {', '.join(str(a) for a in author_list[:3])}"
-            if abstract:
-                content += f"\nAbstract: {abstract[:300]}..."
-        # ✅ Abstract 추가 (가장 중요!)
-        if abstract:
-            abstract_clean = abstract.replace("\n", " ").strip()
-            if len(abstract_clean) > 200:
-                abstract_clean = abstract_clean[:200] + "..."
-            content += f"\nAbstract: {abstract_clean}"
+                # ✅ None 값 필터링 추가
+                author_names = [
+                    str(a) for a in author_list[:3] if a is not None and str(a).strip()
+                ]
+                if author_names:
+                    content += f"\nAuthors: {', '.join(author_names)}"
 
-        # ✅ Keywords 추가
-        if keywords:
-            if isinstance(keywords, str):
-                keyword_list = [kw.strip() for kw in keywords.split(";")][:5]
-            elif isinstance(keywords, list):
-                keyword_list = [str(kw).strip() for kw in keywords[:5]]
-            else:
-                keyword_list = []
+            # ✅ Abstract 추가 (안전한 처리)
+            if abstract and isinstance(abstract, str) and abstract.strip():
+                abstract_clean = abstract.replace("\n", " ").strip()
+                if len(abstract_clean) > 200:
+                    abstract_clean = abstract_clean[:200] + "..."
+                content += f"\nAbstract: {abstract_clean}"
 
-            if keyword_list:
-                content += f"\nKeywords: {', '.join(keyword_list)}"
+            # ✅ Keywords 추가 (안전한 처리)
+            if keywords:
+                if isinstance(keywords, str):
+                    keyword_list = [
+                        kw.strip() for kw in keywords.split(";") if kw.strip()
+                    ][:5]
+                elif isinstance(keywords, list):
+                    keyword_list = [
+                        str(kw).strip()
+                        for kw in keywords[:5]
+                        if kw is not None and str(kw).strip()
+                    ]
+                else:
+                    keyword_list = []
 
-        elif node_type == "author":
+                if keyword_list:
+                    content += f"\nKeywords: {', '.join(keyword_list)}"
+
+        elif node_type == "author":  # ✅ elif로 수정
             name = node_data.get("name", node_id)
             paper_count = node_data.get("paper_count", 0)
             top_keywords = node_data.get("top_keywords", [])
 
+            # ✅ None 체크 추가
+            if name is None:
+                name = str(node_id)
+            if paper_count is None:
+                paper_count = 0
+            if top_keywords is None:
+                top_keywords = []
+
             content = f"Author: {name}"
-            if paper_count:
+            if paper_count and paper_count > 0:
                 content += f"\nPublications: {paper_count} papers"
             if top_keywords:
                 if (
@@ -404,25 +433,40 @@ class GraphRAGRetriever(BaseRetriever):
                     if top_keywords
                     else False
                 ):
-                    keywords = [str(kw[0]) for kw in top_keywords[:5]]
+                    keywords = [
+                        str(kw[0]) for kw in top_keywords[:5] if kw and len(kw) > 0
+                    ]
                 else:
-                    keywords = [str(kw) for kw in top_keywords[:5]]
-                content += f"\nResearch Areas: {', '.join(keywords)}"
+                    keywords = [str(kw) for kw in top_keywords[:5] if kw is not None]
+                if keywords:
+                    content += f"\nResearch Areas: {', '.join(keywords)}"
 
-        elif node_type == "keyword":
+        elif node_type == "keyword":  # ✅ elif로 수정
             keyword = node_data.get("name", node_id)
             frequency = node_data.get("frequency", 0)
 
+            # ✅ None 체크 추가
+            if keyword is None:
+                keyword = str(node_id)
+            if frequency is None:
+                frequency = 0
+
             content = f"Keyword: {keyword}"
-            if frequency:
+            if frequency and frequency > 0:
                 content += f"\nFrequency: {frequency} papers"
 
-        elif node_type == "journal":
+        elif node_type == "journal":  # ✅ elif로 수정
             name = node_data.get("name", node_id)
             paper_count = node_data.get("paper_count", 0)
 
+            # ✅ None 체크 추가
+            if name is None:
+                name = str(node_id)
+            if paper_count is None:
+                paper_count = 0
+
             content = f"Journal: {name}"
-            if paper_count:
+            if paper_count and paper_count > 0:
                 content += f"\nPublications: {paper_count} papers"
         else:
             content = f"{node_type}: {node_id}"

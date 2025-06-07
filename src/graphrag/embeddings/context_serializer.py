@@ -366,6 +366,16 @@ class ContextSerializer:
             }.get(node_type, 0.0)
             relevance_score += type_bonus
 
+            # ✅ Abstract 품질 보너스 (None 체크 추가)
+            if node_type == "paper":
+                abstract = node_data.get("abstract", "")
+                if (
+                    abstract
+                    and isinstance(abstract, str)
+                    and len(abstract.strip()) > 100
+                ):
+                    relevance_score += 0.1  # 상세한 abstract가 있으면 보너스
+
             # 쿼리 분석 기반 보너스
             if query_analysis:
                 if node_type in [nt.value for nt in query_analysis.required_node_types]:
@@ -378,10 +388,8 @@ class ContextSerializer:
                 priorities[node_id] = ContextPriority.HIGH
             elif relevance_score >= 0.4:
                 priorities[node_id] = ContextPriority.MEDIUM
-            elif relevance_score >= config.priority_threshold:
-                priorities[node_id] = ContextPriority.LOW
             else:
-                priorities[node_id] = ContextPriority.SUPPLEMENTARY
+                priorities[node_id] = ContextPriority.LOW
 
         return priorities
 
@@ -591,15 +599,22 @@ class ContextSerializer:
 
         lines = [templates["section_headers"]["papers"]]
 
-        # 우선순위별로 정렬
-        sorted_papers = sorted(
-            paper_nodes.items(),
-            key=lambda x: (
-                node_priorities.get(x[0], ContextPriority.LOW).value,
-                x[1].get("year", ""),
-                x[1].get("title", ""),
-            ),
-        )
+        # ✅ 우선순위별로 정렬 (None 값 안전 처리)
+        def safe_sort_key(x):
+            paper_id, paper_data = x
+            priority_value = node_priorities.get(paper_id, ContextPriority.LOW).value
+            year = paper_data.get("year", "")
+            title = paper_data.get("title", "")
+
+            # None 값을 안전한 기본값으로 변환
+            if year is None:
+                year = ""
+            if title is None:
+                title = ""
+
+            return (priority_value, str(year), str(title))
+
+        sorted_papers = sorted(paper_nodes.items(), key=safe_sort_key)
 
         # 제한된 수만 상세 표시
         detailed_count = min(len(sorted_papers), config.max_nodes_detail)
@@ -613,46 +628,70 @@ class ContextSerializer:
             keywords = paper_data.get("keywords", [])  # ✅ keywords 추가
             priority = node_priorities.get(paper_id, ContextPriority.LOW)
 
+            # ✅ None 값들을 안전하게 처리
+            if title is None:
+                title = "Unknown Title"
+            if year is None:
+                year = ""
+            if abstract is None:
+                abstract = ""
+            if authors is None:
+                authors = []
+            if journal is None:
+                journal = ""
+            if keywords is None:
+                keywords = []
+
             if i < detailed_count:
                 # 상세 정보
                 lines.append(f"\n### 📄 {title}")
-                if year:
+                if year and str(year).strip():
                     lines.append(f"- **Year:** {year}")
                 if authors:
                     author_list = authors if isinstance(authors, list) else [authors]
-                    author_text = ", ".join(author_list[:3])  # 최대 3명
+                    # ✅ None 값 필터링 추가
+                    author_text = ", ".join(
+                        str(a)
+                        for a in author_list[:3]
+                        if a is not None and str(a).strip()
+                    )
                     if len(author_list) > 3:
                         author_text += f" (+{len(author_list)-3} others)"
-                    lines.append(f"- **Authors:** {author_text}")
-                if journal:
+                    if author_text:  # ✅ 빈 문자열 체크
+                        lines.append(f"- **Authors:** {author_text}")
+                if journal and str(journal).strip():
                     lines.append(f"- **Journal:** {journal}")
                 lines.append(f"- **Relevance:** {priority.value}")
-                            # ✅ Abstract 추가 (가장 중요한 정보)
-                if abstract:
-                    # Abstract를 적절한 길이로 자르기
-                    abstract_clean = abstract.replace('\n', ' ').strip()
+
+                # ✅ Abstract 추가 (안전한 처리)
+                if abstract and isinstance(abstract, str) and abstract.strip():
+                    abstract_clean = abstract.replace("\n", " ").strip()
                     if len(abstract_clean) > 300:
                         abstract_clean = abstract_clean[:300] + "..."
                     lines.append(f"- **Abstract:** {abstract_clean}")
-                    
-                # ✅ Keywords 추가 (검색 관련성 향상)
+
+                # ✅ Keywords 추가 (안전한 처리)
                 if keywords:
                     if isinstance(keywords, str):
-                        keyword_list = [kw.strip() for kw in keywords.split(";") if kw.strip()]
+                        keyword_list = [
+                            kw.strip() for kw in keywords.split(";") if kw.strip()
+                        ]
                     elif isinstance(keywords, list):
-                        keyword_list = [str(kw).strip() for kw in keywords if str(kw).strip()]
+                        keyword_list = [
+                            str(kw).strip()
+                            for kw in keywords
+                            if kw is not None and str(kw).strip()
+                        ]
                     else:
                         keyword_list = []
-                    
+
                     if keyword_list:
                         keyword_text = ", ".join(keyword_list[:8])  # 최대 8개
                         lines.append(f"- **Keywords:** {keyword_text}")
             else:
                 # 간단 표시
-                summary = f"- {title}"
-                if year:
-                    summary += f" ({year})"
-                lines.append(summary)
+                year_text = f" ({year})" if year and str(year).strip() else ""
+                lines.append(f"- 📄 {title}{year_text}")
 
         # 요약 정보 (많은 경우)
         if len(sorted_papers) > detailed_count:
@@ -672,13 +711,21 @@ class ContextSerializer:
 
         lines = [templates["section_headers"]["authors"]]
 
-        # 우선순위별로 정렬
+        # ✅ 우선순위별로 정렬 (None 값 안전 처리)
+        def safe_author_sort_key(x):
+            author_id, author_data = x
+            priority_value = node_priorities.get(author_id, ContextPriority.LOW).value
+            paper_count = author_data.get("paper_count", 0)
+
+            # None 값 처리
+            if paper_count is None:
+                paper_count = 0
+
+            return (priority_value, paper_count)
+
         sorted_authors = sorted(
             author_nodes.items(),
-            key=lambda x: (
-                node_priorities.get(x[0], ContextPriority.LOW).value,
-                x[1].get("paper_count", 0),
-            ),
+            key=safe_author_sort_key,
             reverse=True,
         )
 
@@ -689,20 +736,38 @@ class ContextSerializer:
             paper_count = author_data.get("paper_count", 0)
             productivity_type = author_data.get("productivity_type", "")
 
+            # ✅ None 값 처리
+            if name is None:
+                name = str(author_id)
+            if paper_count is None:
+                paper_count = 0
+            if productivity_type is None:
+                productivity_type = ""
+
             lines.append(f"\n### 👤 {name}")
-            if paper_count:
+            if paper_count and paper_count > 0:
                 lines.append(f"- **Papers:** {paper_count}")
-            if productivity_type:
+            if productivity_type and productivity_type.strip():
                 lines.append(f"- **Type:** {productivity_type}")
 
             # 주요 키워드 (있다면)
             top_keywords = author_data.get("top_keywords", [])
             if top_keywords:
-                if isinstance(top_keywords[0], (list, tuple)):
-                    keyword_names = [kw[0] for kw in top_keywords[:3]]
+                if (
+                    isinstance(top_keywords[0], (list, tuple))
+                    if top_keywords
+                    else False
+                ):
+                    keyword_names = [
+                        str(kw[0]) for kw in top_keywords[:3] if kw and len(kw) > 0
+                    ]
                 else:
-                    keyword_names = top_keywords[:3]
-                lines.append(f"- **Research Areas:** {', '.join(keyword_names)}")
+                    keyword_names = [
+                        str(kw) for kw in top_keywords[:3] if kw is not None
+                    ]
+
+                if keyword_names:
+                    lines.append(f"- **Research Areas:** {', '.join(keyword_names)}")
 
         return "\n".join(lines) + "\n"
 
@@ -717,13 +782,21 @@ class ContextSerializer:
 
         lines = [templates["section_headers"]["keywords"]]
 
-        # 빈도별로 정렬
+        # ✅ 빈도별로 정렬 (None 값 안전 처리)
+        def safe_keyword_sort_key(x):
+            keyword_id, keyword_data = x
+            priority_value = node_priorities.get(keyword_id, ContextPriority.LOW).value
+            frequency = keyword_data.get("frequency", 0)
+
+            # None 값 처리
+            if frequency is None:
+                frequency = 0
+
+            return (priority_value, frequency)
+
         sorted_keywords = sorted(
             keyword_nodes.items(),
-            key=lambda x: (
-                node_priorities.get(x[0], ContextPriority.LOW).value,
-                x[1].get("frequency", 0),
-            ),
+            key=safe_keyword_sort_key,
             reverse=True,
         )
 
@@ -737,8 +810,14 @@ class ContextSerializer:
             frequency = keyword_data.get("frequency", 0)
             priority = node_priorities.get(keyword_id, ContextPriority.LOW)
 
+            # ✅ None 값 처리
+            if keyword is None:
+                keyword = str(keyword_id)
+            if frequency is None:
+                frequency = 0
+
             keyword_info = f"{keyword}"
-            if frequency:
+            if frequency and frequency > 0:
                 keyword_info += f" ({frequency})"
 
             if priority == ContextPriority.CRITICAL:
@@ -792,8 +871,8 @@ class ContextSerializer:
             # 샘플 관계들 표시
             sample_size = min(5, len(type_edges))
             for edge in type_edges[:sample_size]:
-                source_id = edge["source"]
-                target_id = edge["target"]
+                source_id = edge.get("source", "")
+                target_id = edge.get("target", "")
 
                 source_data = nodes.get(source_id, {})
                 target_data = nodes.get(target_id, {})
@@ -853,15 +932,29 @@ class ContextSerializer:
 
         if node_type == "paper":
             title = node_data.get("title", "Unknown Paper")
+            if title is None:
+                title = "Unknown Paper"
             return title[:50] + "..." if len(title) > 50 else title
         elif node_type == "author":
-            return node_data.get("name", node_data.get("id", "Unknown Author"))
+            name = node_data.get("name", node_data.get("id", "Unknown Author"))
+            if name is None:
+                name = "Unknown Author"
+            return name
         elif node_type == "keyword":
-            return node_data.get("name", node_data.get("id", "Unknown Keyword"))
+            keyword = node_data.get("name", node_data.get("id", "Unknown Keyword"))
+            if keyword is None:
+                keyword = "Unknown Keyword"
+            return keyword
         elif node_type == "journal":
-            return node_data.get("name", node_data.get("id", "Unknown Journal"))
+            journal = node_data.get("name", node_data.get("id", "Unknown Journal"))
+            if journal is None:
+                journal = "Unknown Journal"
+            return journal
         else:
-            return node_data.get("name", node_data.get("id", "Unknown"))
+            name = node_data.get("name", node_data.get("id", "Unknown"))
+            if name is None:
+                name = "Unknown"
+            return name
 
     def _assemble_main_text(
         self, sections: Dict[str, str], config: SerializationConfig, language: str

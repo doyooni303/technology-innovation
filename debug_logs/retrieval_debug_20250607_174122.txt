@@ -1,0 +1,909 @@
+🚀 GraphRAG Retrieval 디버깅 시작 (파일 저장 버전)
+================================================================================
+📝 상세 출력은 debug_logs/retrieval_debug_20250607_174122.txt에 저장됩니다
+💡 콘솔에는 요약만 출력됩니다
+================================================================================
+
+🔧 Config Manager 사용 테스트
+----------------------------------------
+📁 Project initialized - Root: /home/doyooni303/projects/technology-innovation
+📁 Data directory: /home/doyooni303/projects/technology-innovation/data
+📁 Bibtex files: /home/doyooni303/projects/technology-innovation/data/bibs
+📁 PDF files: /home/doyooni303/projects/technology-innovation/data/pdfs
+2025-06-07 17:41:27,062 | graphrag | INFO | ✅ UnifiedKnowledgeGraphBuilder loaded
+2025-06-07 17:41:27,062 | graphrag | INFO | 🚀 GraphRAG v1.0.0 initialized successfully
+2025-06-07 17:41:27,062 | graphrag | INFO | 📊 Available components: ['config', 'setup_logging', 'set_log_level', 'get_version', 'get_dependencies', 'print_system_info', 'check_dependencies', 'UnifiedKnowledgeGraphBuilder', 'build_unified_graph', 'quick_query']
+2025-06-07 17:41:27,062 | graphrag | INFO | 🔧 Some components are still under development
+2025-06-07 17:41:27,063 | graphrag | INFO | ✅ Available: UnifiedKnowledgeGraphBuilder
+2025-06-07 17:41:27,063 | graphrag | INFO | ✅ GraphRAG components loaded: QueryAnalyzer, SubgraphExtractor, ContextSerializer, GraphRAGPipeline
+✅ Config Manager 로드 성공
+   YAML 모델: paraphrase-multilingual-mpnet-base-v2
+🚀 GraphRAG Embeddings v1.0.0 loaded
+✅ All components ready
+   Vector store: FAISS
+✅ FAISS will use GPU (1 GPUs available)
+✅ Config Manager 기반 검색 성공!
+   노드: 222개
+
+🤖 빠른 모델 테스트
+----------------------------------------
+
+🧪 테스트 모델: paraphrase-multilingual-mpnet-base-v2
+✅ FAISS will use GPU (1 GPUs available)
+   ✅ 성공: 220개 노드, 신뢰도: 0.000
+
+🧪 테스트 모델: all-MiniLM-L6-v2
+✅ FAISS will use GPU (1 GPUs available)
+   ✅ 성공: 0개 노드, 신뢰도: 0.000
+
+🧪 테스트 모델: auto
+✅ FAISS will use GPU (1 GPUs available)
+   ✅ 성공: 220개 노드, 신뢰도: 0.000
+
+🔍 전체 프로세스 테스트: What machine learning techniques are used for battery SoC prediction?
+🔍 디버깅 질문: What machine learning techniques are used for battery SoC prediction?
+================================================================================
+✅ Retriever 생성 완료
+
+📋 검색 실행 중...
+✅ FAISS will use GPU (1 GPUs available)
+검색된 문서 수: 10
+✅ 검색 성공!
+   노드 수: 222
+   신뢰도: 0.000
+   컨텍스트 미리보기: ## 📊 Overview
+**Query:** What machine learning techniques are used for battery SoC prediction?
+- 127...
+
+📄 전체 컨텍스트 (파일에만 저장):
+============================================================
+## 📊 Overview
+**Query:** What machine learning techniques are used for battery SoC prediction?
+- 127 papers total
+- 17 researchers total
+- 2009 - 2025 period
+- Main topics: energy storage, state, health, li-ion battery, machinelearning
+- **Confidence:** Medium (0.59)
+
+## 📄 Related Papers
+### 📄 Machine Learning approach for Prediction of residual energy in batteries
+- **Relevance:** critical
+### 📄 Probabilistic constrained load flow considering integration of wind power generation and electric vehicles
+- **Relevance:** high
+### 📄 Reinforcement learning based algorithm for the maximization of EV charging station revenue
+- **Relevance:** high
+### 📄 An improved SoC estimation algorithm based on artificial neural network
+- **Relevance:** high
+### 📄 Reinforcement learning of heuristic EV fleet charging in a day-ahead electricity market
+- **Relevance:** high
+### 📄 An intelligent energy management mechanism for electric vehicles
+- **Relevance:** high
+### 📄 Diagnosis of electric vehicle batteries using recurrent neural networks
+- **Relevance:** high
+### 📄 Interests and limits of machine learning-based neural networks for rotor position estimation in EV traction drives
+- **Relevance:** high
+### 📄 Deep reinforcement learning energy management system for multiple battery based electric vehicles
+- **Relevance:** high
+### 📄 A heuristic planning reinforcement learning-based energy management for power-split plug-in hybrid electric vehicles
+- **Relevance:** high
+### 📄 Blockchain and computational intelligence inspired incentive-compatible demand response in internet of electric vehicles
+- **Relevance:** high
+### 📄 Constrained EV charging scheduling based on safe deep reinforcement learning
+- **Relevance:** high
+### 📄 Deep reinforcement learning for EV charging navigation by coordinating smart grid and intelligent transportation system
+- **Relevance:** high
+### 📄 Large-Scale Home Energy Management Using Entropy-Based Collective Multiagent Deep Reinforcement Learning Framework.
+- **Relevance:** high
+### 📄 Machine learning approaches for designing mesoscale structure of li-ion battery electrodes
+- **Relevance:** high
+### 📄 Self-secured control with anomaly detection and recovery in automotive cyber-physical systems
+- **Relevance:** high
+### 📄 A New Calibration Approach for Charging Facilities for Electric Vehicles via Machine Learning
+- **Relevance:** high
+### 📄 A comparative study of machine learning based modeling methods for Lithium-ion battery
+- **Relevance:** high
+### 📄 A multi-step unified reinforcement learning method for automatic generation control in multi-area interconnected power grid
+- **Relevance:** high
+### 📄 An efficient reinforcement learning based charging data delivery scheme in VANET-enhanced smart grid
+- **Relevance:** high
+### 📄 Deep reinforcement learning based energy management for a hybrid electric vehicle
+- **Relevance:** high
+### 📄 Deep reinforcement learning based optimal schedule for a battery swapping station considering uncertainties
+- **Relevance:** high
+### 📄 Deep reinforcement learning-based controller for SOC management of multi-electrical energy storage system
+- **Relevance:** high
+- **Abstract:** Abstract—The ongoing reduction of the total rotational more time for other control actions to restore the frequency inertia in modern power systems brings about faster frequency to its nominal value. The increased penetration of renewable dynamics that must be limited to maintain a secure and eco- e...
+### 📄 Deep-reinforcement-learning-based capacity scheduling for PV-battery storage system
+- **Relevance:** high
+### 📄 Energy-efficient autonomous vehicle control using reinforcement learning and interactive traffic simulations
+- **Relevance:** high
+### 📄 Image-based defect detection in lithium-ion battery electrode using convolutional neural networks
+- **Relevance:** high
+### 📄 Insights from machine learning of carbon electrodes for electric double layer capacitors
+- **Relevance:** high
+### 📄 Joint charging and relocation recommendation for e-taxi drivers via multi-agent mean field hierarchical reinforcement learning
+- **Relevance:** high
+### 📄 MARLA-SG: Multi-agent reinforcement learning algorithm for efficient demand response in smart grid
+- **Relevance:** high
+### 📄 Machine learning approach for systematic analysis of energy efficiency potentials in manufacturing processes: A case of battery production
+- **Relevance:** high
+### 📄 New ANN results on a major benchmark for the prediction of RUL of Lithium Ion batteries in electric vehicles
+- **Relevance:** high
+### 📄 Reinforcement learning-based distributed BESS management for mitigating overvoltage issues in systems with high PV penetration
+- **Relevance:** high
+### 📄 Reinforcement learning-based load forecasting of electric vehicle charging station using Q-learning technique
+- **Relevance:** high
+### 📄 Stochastic modeling and integration of plug-in hybrid electric vehicles in reconfigurable microgrids with deep learning-based forecasting
+- **Relevance:** high
+### 📄 The V2G process with the predictive model
+- **Relevance:** high
+### 📄 Vehicle to grid frequency regulation capacity optimal scheduling for battery swapping station using deep Q-network
+- **Relevance:** high
+### 📄 A human-machine reinforcement learning method for cooperative energy management
+- **Relevance:** high
+### 📄 Adaptive cruise control for autonomous electric vehicles based on q-learning algorithm
+- **Relevance:** high
+### 📄 Advanced machine learning approaches for state-of-charge prediction of Li-ion batteries under multisine excitation
+- **Relevance:** high
+### 📄 Application of machine learning to sleep stage classification
+- **Relevance:** high
+### 📄 Deep reinforcement learning for continuous electric vehicles charging control with dynamic user behaviors
+- **Relevance:** high
+### 📄 Driving mode predictor-based real-time energy management for dual-source electric vehicle
+- **Relevance:** high
+### 📄 Electric vehicle charging via machine-learning pattern recognition
+- **Relevance:** high
+### 📄 Machine-learning-based real-time economic dispatch in islanding microgrids in a cloud-edge computing environment
+- **Relevance:** high
+### 📄 Mass load prediction for lithium-ion battery electrode clean production: A machine learning approach
+- **Relevance:** high
+### 📄 Multi agent deep Q-reinforcement learning for autonomous low voltage grid control
+- **Relevance:** high
+### 📄 Smart online charging algorithm for electric vehicles via customized actor--critic learning
+- **Relevance:** high
+- **Abstract:** Abstract—With the advances in the Internet of Things tech- future charging demand is known in advance, such that the nology, electric vehicles (EVs) have become easier to schedule EV charging can be scheduled to flatten the total load [2]. in daily life, which is reshaping the electric load curve. I...
+### 📄 A Model-Data-Fusion Pole Piece Thickness Prediction Method With Multisensor Fusion for Lithium Battery Rolling Machine
+- **Relevance:** high
+### 📄 A blockchain-enabled demand management and control framework driven by deep reinforcement learning
+- **Relevance:** high
+### 📄 A machine learning method for ev range prediction with updates on route information and traffic conditions
+- **Relevance:** high
+
+- **Year:** 2022
+- **Authors:** T Jayakumar, Natesh Gowda, R Sujatha (+6 others)
+- **Journal:** Energy Reports
+- **Abstract:** The ability to predict battery residual life (RL) in advance is critical for ensuring a reliable supply of energy and the most efficient use of that energy. When it comes to precisely predicting the level of charge of batteries, battery management systemsmustbedurableandtrustworthy(SoC).Becauseofthe...
+- **Keywords:** accuracy, artificial intelligence, batteries, battery, battery degradation, cathode, data, deep learning
+
+- **Year:** 2009
+- **Authors:** John Vlachogiannis
+- **Journal:** IEEE Transactions on Power Systems
+- **Abstract:** Abstract—Anewformulationandsolutionofprobabilisticcon- settings satisfying constraints over a whole planning period. strainedloadflow(PCLF)problemsuitableformodernpowersys- Dispatching effects and topological variations are considered tems with wind power generation and electric vehicles (EV) de- us...
+- **Keywords:** anewformulationandsolutionofprobabilisticcon, constrained, constraints, control, electric vehicle, flow, load, load flow
+
+- **Year:** 2014
+- **Authors:** Stoyan Dimitrov, Redouane Lguensat
+- **Abstract:** Abstract—This paper presents an online reinforcement learn- about the theory behind the Q-learning method, respectively. ingbasedapplicationwhichincreasestherevenueofoneparticu- Sections IV contains the details of the model we consider larelectricvehicles(EV)station,connectedtoarenewablesource and t...
+- **Keywords:** action, algorithm, charging, charging station, day, electric vehicle, energy, fast charging
+
+- **Year:** 2015
+- **Authors:** Fangming Liu, Ting Liu, Yuzhuo Fu
+- **Abstract:** Abstract—The state of charge(SoC)’s real time estimation plays an essential role in effective energy management, and BatteryType Parameters Value has great significance to efficient operation and safe of electric Fullvoltage 4.2V Batterycell vehicles(EV). Many methods, such as current integration, o...
+- **Keywords:** algorithm, ann, ann model, battery, battery capacity, bms, circuit, circuit voltage
+
+- **Year:** 2015
+- **Authors:** Stijn Vandael, Bert Claessens, Damien Ernst (+2 others)
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—This paper addresses the problem of defining a Sets day-ahead consumption plan for charging a fleet of electric iθ Set of all charging parameters available at day D for vehicles (EVs), and following this plan during operation. A D electric vehicle (EV) i. challenge herein is the beforehand ...
+- **Keywords:** aggregator, ahead, belgium, charging, charging parameters, consumption, control, day
+
+- **Year:** 2016
+- **Authors:** Chenn-Jung Huang, Kai-Wen Hu, Heng-Ming Chen (+3 others)
+- **Journal:** Applied Artificial Intelligence
+- **Abstract:** Electric vehicles (EVs) have become increasingly popular all over the world in recent years. Many countries have been offering reward policies and facilitating the establishment of EV charging stations and battery exchange stations to encou- rageuseofthesevehiclesbythepublic.However,intermsof electr...
+- **Keywords:** artificial intelligence, battery, battery exchange, charging, charging station, charging stations, driving, electric
+
+- **Year:** 2017
+- **Authors:** Gae-Won You, Sangdo Park, Dukjin Oh
+- **Journal:** IEEE Transactions on Industrial Electronics
+- **Abstract:** Abstract—In electric vehicle (EV) systems, diagnosing battery states, such as state of health (SOH), is crucial to guarantee safety. Such a diagnosis can be used to deter- mine the replacement time for a battery or to assess the drivingmileage.Themajorityofstudiesinrecentdecades have defined SOH und...
+- **Keywords:** assumptions, batteries, battery, battery aging, battery management system, capacity, charge, data
+
+- **Year:** 2017
+- **Authors:** Wided Zine, Zaatar Makni, Eric Monmasson (+2 others)
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—In this paper, a novel rotor position estimator For these reasons, a great deal of position self-sensing foraninteriorpermanentmagnetsynchronousmotorispre- schemeshasbeenproposedmainlyforpermanentmagnetsyn- sentedandevaluated.Theproposedestimatorliesonone chronousmachines.Theseself-sensings...
+- **Keywords:** back, com, data, drives, electric vehicle, estimation, estimator, france
+
+- **Year:** 2018
+- **Authors:** Hicham Chaoui, Hamid Gualous, Loic Boulon (+1 others)
+- **Abstract:** Abstract—In recent years, energy management systems have performance. Hence, energy management of such systems is become an emerging research topic. This concept allows the a serious issue as it significantly influences the performance distribution of energy-intensive loads among various energy of e...
+- **Keywords:** among, batteries, battery, cid, cnn, devices, electric, electric vehicle
+
+- **Year:** 2019
+- **Authors:** Teng Liu, Xiaosong Hu, Weihao Hu (+1 others)
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—This paper proposes a heuristic planning en- electric vehicles (PHEVs) are regarded today as a promising ergy management controller, based on a Dyna agent of technology, because of their excellent fuel efficiency [2]. En- reinforcementlearning(RL)approach,forreal-timefuelsav- ergy managemen...
+- **Keywords:** bat, battery degradation, china, control, dyna, electric, electric vehicle, energy
+
+- **Year:** 2019
+- **Authors:** Zhenyu Zhou, Bingchen Wang, Yufei Guo (+1 others)
+- **Journal:** IEEE Transactions on Emerging Topics in Computational Intelligence
+- **Abstract:** Abstract—Byleveragingthecharginganddischargingcapabili- vehicles(EVs)posesnewchallengesonsmartenergymanage- tiesofInternetofelectricvehicles(IoEV),demandresponse(DR) ment.Specifically,inordertobalanceloadandsupply,alarge can be implemented in smart cities to enable intelligent energy number of centr...
+- **Keywords:** battery capacity, blockchain, byleveragingthecharginganddischargingcapabili, cities, computational, computational intelligence, consortium, contract
+
+- **Year:** 2019
+- **Authors:** Hepeng Li, Zhiqiang Wan, Haibo He
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—Electricvehicles(EVs)havebeenpopularlyadopted chargingschedulestooff-peakhoursthroughDR[5].InaDR and deployed over the past few years because they are program,EVchargingschedulescanbeoptimizedinresponse environment-friendly.Whenintegratedintosmartgrids,EVscan totime-varyingprices[6]toreduce...
+- **Keywords:** advantage, charging, charging discharging, cid, cid cid, cmdp, constrained, constraint
+
+- **Year:** 2019
+- **Authors:** Tao Qian, Chengcheng Shao, Xiuli Wang (+1 others)
+- **Journal:** IEEE transactions on smart grid
+- **Abstract:** Abstract—A coordinated operation of smart grid (SG) and Parameters intelligent transportation system (ITS) provides electric vehi- π Value of unit time of EV driver cle (EV) owners with a myriad of power and transportation d Distance from node i to j network data for EV charging navigation. However,...
+- **Keywords:** battery, battery capacity, cch, charging, charging navigation, charging station, cid, cid cid
+
+- **Year:** 2019
+- **Authors:** Yaodong Yang, Jianye Hao, Yan Zheng (+1 others)
+- **Abstract:** Abstract which makes the power grid hard to maintain the demand- supply balance. With the increasing number of active elec- Smart grids are contributing to the demand-side tricitycustomersandtheadventofdecentralizedpowergen- management by integrating electronic equipment, eration technologies, the p...
+- **Keywords:** balance, battery, battery capacity, cid, cid cid, consumption, demand, demand side
+
+- **Year:** 2019
+- **Authors:** Yoichi Takagishi, Takumi Yamanaka, Tatsuya Yamaue
+- **Journal:** Batteries
+- **Abstract:** Wehaveproposedadata-drivenapproachfordesigningthemesoscaleporousstructuresof Li-ionbatteryelectrodes,usingthree-dimensionalvirtualstructuresandmachinelearningtechniques. Over2000artificial3Dstructures,assumingapositiveelectrodecomposedofrandomlypackedspheres astheactivematerialparticles,aregenerated...
+- **Keywords:** aanndd, andthecharge, aregenerated, assumingapositiveelectrodecomposedofrandomlypackedspheres, astheactivematerialparticles, battery, chemical, chemicalmodel
+
+- **Year:** 2019
+- **Authors:** Korosh Vatanparvar, Mohammad Al Faruque
+- **Abstract:** Abstract—Cyber-Physical Systems (CPS) are growing inordertodecidehowmucheachcellcanprovidepowerand with added complexity and functionality. Multidisciplinary energy at each state. The BMS is responsible to prevent over interactions with physical systems are the major keys to loading, over charging, ...
+- **Keywords:** battery, battery capacity, battery cells, battery management system, behavior, bms, cells, cid
+
+- **Year:** 2020
+- **Authors:** Shaohui Chen, Di Zhou, Juntao Ye (+2 others)
+- **Abstract:** Abstract—The traditional calibration method for charging [4], but this method is time-consuming and inefficient. piles which used forelectric vehicles relies on the field inspection Another new type of calibration is called remote calibration of standard devices of metrology agency. However, with th...
+- **Keywords:** another, artificial intelligence, calibration, charging, charging pile, cid, cid cid, data
+
+- **Year:** 2020
+- **Authors:** Peng Wang, Jie Fan, Yang Ou (+5 others)
+- **Abstract:** Abstract. A suitable battery model plays an important role in assisting accurate state estimation for power battery used in electric vehicles. This paper compares the applications of four commonly used machine learning methods (decision tree, k-nearest neighbour, support vector machine and neural ne...
+- **Keywords:** adaptability, battery, cid, cid cid, data, different, electric vehicle, four
+
+- **Year:** 2020
+- **Authors:** Lei Xi, Lipeng Zhou, Yanchun Xu (+1 others)
+- **Journal:** IEEE Transactions on Sustainable Energy
+- **Abstract:** Abstract—Asthepenetrationrateofnewenergies,energystor- output of the frequency control resource in real time in power agedevicesandelectric vehiclesincreases continuouslyinpower grids,thusthesystemfrequencyismorestable[6]–[7]. grid, power grid faces strong random disturbances, as well as However, in...
+- **Keywords:** agc, algorithm, area, asthepenetrationrateofnewenergies, cid, control, electric vehicle, energy
+
+- **Year:** 2020
+- **Authors:** Guangyu Li, Chen Gong, Lin Zhao (+2 others)
+- **Abstract:** Abstract—Insufficientandfragiledeliveryofenormouscharg- vehicle-to-vehicle (V2V) charging concept (where energy can ing data imposes great challenges on the productive operations be exchanged among EVs without the assistances of charging of smart grid systems. In this paper, we propose an efficient ...
+- **Keywords:** among, artificial intelligence, charging, communication, connectivity, data, delivery, energy
+
+- **Year:** 2020
+- **Authors:** Guodong Du, Yuan Zou, Xudong Zhang (+3 others)
+- **Journal:** Energy
+- **Keywords:** anoveldeepreinforcementlearningalgorithmdeepq-, cid, control, deep, dyna, electric vehicle, energy, energy management
+
+- **Year:** 2020
+- **Authors:** Yuan Gao, Jiajun Yang, Ming Yang (+1 others)
+- **Journal:** IEEE Transactions on Industry Applications
+- **Abstract:** Abstract—Forabatteryswappingstation(BSS),thestochastic max(x,y) Output the larger one where x, y all belong to the operationofelectricbuses(EBs)andtheuncertaintyofelectricity realnumberfield. pricescauseunnecessaryeconomiclosses.Tominimizetheoper- (cid:2) Gradientfunction. atingcostsoftheBSS,thisart...
+- **Keywords:** battery, battery capacity, battery swapping, bss, charging, cid, control, demand
+
+- **Year:** 2020
+- **Authors:** Francisco Gorostiza, Francisco Gonzalez-Longatt
+- **Journal:** IEEE Transactions on Smart Grid
+- **Keywords:** action, agent, control, controller, deep, eess, eesss, electric vehicle
+
+- **Year:** 2020
+- **Authors:** Bin Huang, Jianhui Wang
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—Investor-ownedphotovoltaic-batterystoragesystems Investor-owned PV-BSS can be regarded as an indepen- (PV-BSS)cangainrevenuebyprovidingstackedservices,includ- dent entity to the power grid, with the goal of maximizing ing PV charging and frequency regulation, and by performing the revenue. ...
+- **Keywords:** action, agent, battery, battery capacity, bss, capacity, charging, control
+
+- **Year:** 2020
+- **Authors:** Huayi Li, Nan Li, Ilya Kolmanovsky (+1 others)
+- **Abstract:** Abstract—Connected and autonomous vehicles are expected improve fuel economy [12], [13], but it also increases the to improve mobility and transportation, as well as to provide problem complexity. In particular, there are subtle trade- energy efficiency benefits. The integration of safety and energy...
+- **Keywords:** also, battery, battery capacity, control, efficiency, electric vehicle, energy, energy efficiency
+
+- **Year:** 2020
+- **Authors:** Olatomiwa Badmos, Andreas Kopp, Timo Bernthaler (+1 others)
+- **Journal:** Journal of Intelligent Manufacturing
+- **Abstract:** Duringthemanufacturingoflithium-ionbatteryelectrodes,itisdifficulttopreventcertaintypesofdefects,whichaffectthe overallbatteryperformanceandlifespan.Deeplearningcomputervisionmethodswereusedtoevaluatethequalityoflithium- ionbatteryelectrodeforautomateddetectionofmicrostructuraldefectsfromlightmicros...
+- **Keywords:** anode, battery, cathode, cnn, coating, computer vision · microstructure · deep learning · convolutional neural networks · lithium-ion battery ·, convolutional neural network, deep learning
+
+- **Year:** 2020
+- **Authors:** Musen Zhou, Alejandro Gallegos, Kun Liu (+2 others)
+- **Journal:** Carbon
+- **Abstract:** Recent years have witnessed the broad use of carbon electrodes for electric double layer capacitors (EDLCs) because of large surface area, high porosity and low cost. Whereas experimental investigations are mostly focused on the device performance, computational studies have been rarely concerned wi...
+- **Keywords:** carbon, carbon electrodes, density, edlcs, electrode, electrodes, elsevier, energy
+
+- **Year:** 2020
+- **Authors:** Enshu Wang, Rong Ding, Zhaoxing Yang (+6 others)
+- **Journal:** IEEE Transactions on Mobile Computing
+- **Abstract:** Abstract—Nowadays,mostofthetaxidrivershavebecomeusersoftherelocationrecommendationserviceofferedbyonlineride- hailingplatforms(e.g.,UberandDidiChuxing),whichcouldoftentimesleaddriverstoplaceswithprofitableorders.Atthesametime, electrictaxis(e-taxis)areincreasinglyadoptedandgraduallyreplacinggasoline...
+- **Keywords:** agent, atthesametime, charging, charging station, drivers, fast charging, hailingplatforms, learning
+
+- **Year:** 2020
+- **Authors:** Sally Aladdin, Samah El-Tantawy, Mostafa Fouda (+1 others)
+- **Journal:** IEEE access
+- **Abstract:** Thepopulationissharplygrowinginthelastdecade,resultinginnon-potentialpowerrequests in dense urban areas, especially with the traditional power grid where the system is not compatible with theinfrequentchanges.Smartgridshaveshownstrongpotentialtoeffectivelymitigateandsmoothpower consumptioncurvestoav...
+- **Keywords:** action, also, cost, demand, demandresponse, dense, device, devices
+
+- **Year:** 2020
+- **Authors:** Sebastian Thiede, Artem Turetskyy, Thomas Loellhoeffel (+3 others)
+- **Journal:** CIRP Annals
+- **Keywords:** battery, battery production, cid, demand, drying, drying process, efficiency, electric vehicle
+
+- **Year:** 2020
+- **Authors:** In{\`e}s Jorge, Ahmed Samet, Tedjani Mesbahi (+1 others)
+- **Abstract:** Abstract—LithiumIonbatteriesareacorecomponentofmany financiallyandenvironmentally[3].Therefore,itbecameclear lately designed devices. It is of crucial importance to be able to thatprogressshouldnotonlybemadeonbatteriesthemselves fully master the behaviour of batteries in order to meet the but also o...
+- **Keywords:** batteries, battery, behaviour, cells, cnn, convolutional neural network, cycle, data
+
+- **Year:** 2020
+- **Authors:** Mohammed Al-Saffar, Petr Musilek
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—Highlevelsofpenetrationofdistributedphotovoltaic P PV PV power generation kW. generatorscancauseseriousovervoltageissues,especiallyduring Prev Reverse power of the assisting buses kW. periods of high power generation and light loads. There have P BESS charging power kW. been many solutions ...
+- **Keywords:** bess, buses, capacity, control, csocc, distribution, energy, energy storage
+
+- **Year:** 2020
+- **Authors:** Morteza Dabbaghjamanesh, Amirhossein Moeini, Abdollah Kavousi-Fard
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—The electric vehicles’ (EVs) rapid growth can accurateEVchargingloaddemandforecastingisoneofthekey potentially lead power grids to face new challenges due concernsfromthepowergridpointsofview[4],[5]. to load profile changes. To this end, a new method is pre- Recent advances in the plug-in h...
+- **Keywords:** ann, artificial, artificial intelligence, battery capacity, charging, charging station, cnn, coordinated
+
+- **Year:** 2020
+- **Authors:** Morteza Dabbaghjamanesh, Abdollah Kavousi-Fard, Jie Zhang
+- **Journal:** IEEE Transactions on Intelligent Transportation Systems
+- **Abstract:** Abstract—Thispaperinvestigatestheimpactofuncoordinated, coordinated, and smart charging of plug-in hybrid electric A  Projected area of conductor(m2/Linear vehicles (PHEVs) on the optimal operation of microgrids (MGs) m). incorporatingthedynamiclinerating(DLR)securityconstraint. D Conductor diamete...
+- **Keywords:** azimuth, base, capacity, charging, conductor, coordinated, current, deep learning
+
+- **Year:** 2020
+- **Authors:** Bart{\l}omiej Mroczek, Amanda Ko{\l}ody{\'n}ska
+- **Journal:** IEEE Access
+- **Abstract:** The paper proposes using a predictive model to optimize the use of electricity in the V2G (vehicletogrid)service.Thenoveltyofthemechanismasakindofmodelpredictivecontrol(MPC)isthat itseeksaneffectivewayofmanagingelectricenergyinanElectricVehicle(EV).Additionally,itproposes a new method of predicting ...
+- **Keywords:** available, cid, demand, electric, electric car, electric vehicle, electricity, energy
+
+- **Year:** 2020
+- **Authors:** Xinan Wang, Jianhui Wang, Jianzhe Liu
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—Battery swapping stations (BSSs) are ideal S¯ /S Battery SOC upper/lower bound for participating in candidates for fast frequency regulation services (FFRS) FFRS. duetotheirlargebatterystockcapacity.Inaddition,BSSs F Lithium-ionbatterypricein$/kWh can precharge batteries for customers and t...
+- **Keywords:** batteries, battery, battery degradation, battery swapping, bss, bsss, capacity, energy
+
+- **Year:** 2021
+- **Authors:** Yuechuan Tao, Jing Qiu, Shuying Lai (+3 others)
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—The increasing penetration of distributed en- Index Terms—Electric vehicles (EVs), energy manage- ergy resources and a large volume of unprecedented data ment, human-machine, reinforcement learning (RL), ther- from smart metering infrastructure can help consumers mostaticallycontrolledloads...
+- **Keywords:** battery degradation, charging, cid, cid cid, dis, discharging, electric, electric vehicle
+
+- **Year:** 2021
+- **Authors:** Angelo Coppola, Alberto Petrillo, Renato Rizzo (+1 others)
+- **Abstract:** Abstract—This work presents an ACC-like longitudinal con- are based on rules defining the reference behavior of the AV troller for an autonomous electric vehicle, named Ego-Vehicle, for each scenario, as well as some characteristic variables are based on a Deep Deterministic Reinforcement Learning a...
+- **Keywords:** acc, action, algorithm, autonomous, battery, battery capacity, cid, control
+
+- **Year:** 2021
+- **Authors:** Adrienn Dineva
+- **Abstract:** Abstract—The technological progress of e-Mobility the direct measurement is usually impractical or has led to an increased use of Electric Vehicles (EVs), impossible. Since, the suitable estimation methods are which today satisfies the majority of the customers’ still the focus of much research. Alo...
+- **Keywords:** battery, battery aging, battery management system, bms, cell, charge, cid, cid cid
+
+- **Year:** 2021
+- **Authors:** Andrew Smith, Hardik Anand, Snezana Milosavljevic (+3 others)
+- **Abstract:** Abstract—Sleep studies are imperative to recapitulate phe- Sleep is essential for optimal health. Sleep is one of the notypes associated with sleep loss and uncover mechanisms most critical and ubiquitous biological processes, next to contributing to psychopathology. Most often, investigators man- e...
+- **Keywords:** artificial, classifier, data, decision, duration, eeg, electrode, emg
+
+- **Year:** 2021
+- **Authors:** Linfang Yan, Xia Chen, Jianyu Zhou (+2 others)
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—ThispaperaimstocracktheindividualEVcharging share has increased significantly and maintained upward in schedulingproblemconsideringthedynamicuserbehaviorsand recent years [2]. As the EV penetration increases, the charg- theelectricityprice.TheuncertaintyoftheEVchargingdemand ing infrastruct...
+- **Keywords:** also, anxiety, artificial intelligence, battery, battery capacity, behaviors, charging, charging station
+
+- **Year:** 2021
+- **Authors:** Marouane Adnane, Bảo-Huy Nguyễn, Ahmed Khoumsi (+1 others)
+- **Journal:** IEEE Transactions on Transportation Electrification
+- **Abstract:** Abstract—Tominimizebatteryagingofelectricvehicles(EVs), approach.ThecombinationofbatteryandSCs formsa hybrid it is paramount to manage efficiently their energy consumption. energy storage system (HESS) which can be configured as Anenergy management strategy (EMS)hasrecentlybeendevel- active or semi-...
+- **Keywords:** active, battery, battery aging, battery degradation, current, dmp, driving, electric vehicle
+
+- **Year:** 2021
+- **Authors:** Theron Smith, Joseph Garcia, Gregory Washington
+- **Journal:** Journal of Energy Engineering
+- **Abstract:** Thispaperpresentsmachinelearningvalley-filling(MLVF)toenhanceplug-inelectricvehicle(PEV)chargingatthelocalpower levelwhileminimizingtheeffectsofuncontrolledPEVcharging.Thisstudyinvestigatedwhetheraneuralnetworkalgorithmcouldlearnto identifywhentobeginchargingaPEVbydistinguishinglowandhighdemandsecti...
+- **Keywords:** algorithm, baseload, charging, cnn, convolutional neural network, data, demand, distribution transformer
+
+- **Year:** 2021
+- **Authors:** Wei Dong, Qiang Yang, Wei Li (+1 others)
+- **Journal:** IEEE Internet of Things Journal
+- **Abstract:** Abstract—The paradigm of the Internet of Things (IoT) and construction cost [2]. The power generation intermittency of cloud-edge computing plays a significant role in future smart massively penetrated distributed renewable power sources and grids. The data-driven solution integrating the artificial...
+- **Keywords:** artificial intelligence, brings, cloud, computing, demand, dispatch, economic, edge
+
+- **Year:** 2021
+- **Authors:** Kailong Liu, Zhongbao Wei, Zhile Yang (+1 others)
+- **Journal:** Journal of Cleaner Production
+- **Abstract:** Materials Mixing Coating Slurries IFVs (MC, STLR, viscosity ) Mass load Maritime CPs (CG ) transportation Batteries Cutting Drying and Calendering Electrode MC STLR V CG ledoM noissergeR RPG ARD Importance Weights gnixiM gnitaoC Electrode Mass load 4 5 A list of terminology and symbols 6 Li-ion lith...
+- **Keywords:** ard, battery, battery electrode, battery electrode production, battery production, calendering, cid, cid cid
+
+- **Year:** 2021
+- **Authors:** Michael Kelker, Lars Quakernack, Jens Haubrock
+- **Abstract:** Abstract— Due to the steadily increasing share of decentralized important step of the energy transition [3]. To ensure high renewable energies in the German energy system, flexibilities in power quality at all grid levels, safe and reliable operation of the low-voltage (LV) grid such as battery stor...
+- **Keywords:** agent, artificial intelligence, autonomous, bss, charging, control, dqn, due
+
+- **Year:** 2021
+- **Authors:** Yongsheng Cao, Hao Wang, Demin Li (+1 others)
+- **Journal:** IEEE Internet of Things Journal
+- **Keywords:** actor, actor critic, algorithm, artificial intelligence, battery capacity, charging, charging problem, charging station
+
+- **Year:** 2022
+- **Authors:** Yanjun Xiao, Shuhan Deng, Furong Han (+3 others)
+- **Journal:** IEEE Access
+- **Abstract:** Trendpredictionbasedonsensordataisanimportanttopicinthethicknesscontrolsystemof lithiumbatteryelectrodemills.Asthenumberofsensorsincreases,wecanmeasureandstoremoreandmore data. The characteristics of nonlinearity, uncertainty, and time-variability in the lithium battery electrode thicknesscontrolsys...
+- **Keywords:** battery, battery capacity, battery electrode, coating process, data, deep learning, electrode, electrode thickness
+
+- **Year:** 2022
+- **Authors:** Rui Ma, Zhehan Yi, Yingmeng Xiang (+3 others)
+- **Journal:** IEEE Transactions on Industrial Electronics
+- **Abstract:** Abstract—The rapid development of Internet-of-Things P(t) Electricitypriceattimet. in smart grid has enabled millions of grid-connected dis- λt,λt(·) Incentive rate at time t and function of the tributedcontrollableresources(DCR;e.g.,electricvehicles, controllable loads) to provide service to the gr...
+*[Content truncated due to length limits]*
+============================================================
+
+🎯 프롬프트 생성...
+프롬프트 길이: 37020 문자
+프롬프트 미리보기: You are an expert AI assistant specialized in analyzing scientific papers and research data. 당신은 과학 논문과 연구 데이터 분석을 전문으로 하는 AI 어시스턴트입니다.
+
+Please provid...
+
+📄 전체 프롬프트 (파일에만 저장):
+============================================================
+You are an expert AI assistant specialized in analyzing scientific papers and research data. 당신은 과학 논문과 연구 데이터 분석을 전문으로 하는 AI 어시스턴트입니다.
+
+Please provide accurate and helpful answers based on the knowledge graph information. 지식 그래프 정보를 바탕으로 정확하고 유용한 답변을 제공해주세요.
+
+다음은 질문과 관련된 지식 그래프 컨텍스트입니다 (The following is knowledge graph context related to the question):
+## 📊 Overview
+**Query:** What machine learning techniques are used for battery SoC prediction?
+- 127 papers total
+- 17 researchers total
+- 2009 - 2025 period
+- Main topics: energy storage, state, health, li-ion battery, machinelearning
+- **Confidence:** Medium (0.59)
+
+## 📄 Related Papers
+### 📄 Machine Learning approach for Prediction of residual energy in batteries
+- **Relevance:** critical
+### 📄 Probabilistic constrained load flow considering integration of wind power generation and electric vehicles
+- **Relevance:** high
+### 📄 Reinforcement learning based algorithm for the maximization of EV charging station revenue
+- **Relevance:** high
+### 📄 An improved SoC estimation algorithm based on artificial neural network
+- **Relevance:** high
+### 📄 Reinforcement learning of heuristic EV fleet charging in a day-ahead electricity market
+- **Relevance:** high
+### 📄 An intelligent energy management mechanism for electric vehicles
+- **Relevance:** high
+### 📄 Diagnosis of electric vehicle batteries using recurrent neural networks
+- **Relevance:** high
+### 📄 Interests and limits of machine learning-based neural networks for rotor position estimation in EV traction drives
+- **Relevance:** high
+### 📄 Deep reinforcement learning energy management system for multiple battery based electric vehicles
+- **Relevance:** high
+### 📄 A heuristic planning reinforcement learning-based energy management for power-split plug-in hybrid electric vehicles
+- **Relevance:** high
+### 📄 Blockchain and computational intelligence inspired incentive-compatible demand response in internet of electric vehicles
+- **Relevance:** high
+### 📄 Constrained EV charging scheduling based on safe deep reinforcement learning
+- **Relevance:** high
+### 📄 Deep reinforcement learning for EV charging navigation by coordinating smart grid and intelligent transportation system
+- **Relevance:** high
+### 📄 Large-Scale Home Energy Management Using Entropy-Based Collective Multiagent Deep Reinforcement Learning Framework.
+- **Relevance:** high
+### 📄 Machine learning approaches for designing mesoscale structure of li-ion battery electrodes
+- **Relevance:** high
+### 📄 Self-secured control with anomaly detection and recovery in automotive cyber-physical systems
+- **Relevance:** high
+### 📄 A New Calibration Approach for Charging Facilities for Electric Vehicles via Machine Learning
+- **Relevance:** high
+### 📄 A comparative study of machine learning based modeling methods for Lithium-ion battery
+- **Relevance:** high
+### 📄 A multi-step unified reinforcement learning method for automatic generation control in multi-area interconnected power grid
+- **Relevance:** high
+### 📄 An efficient reinforcement learning based charging data delivery scheme in VANET-enhanced smart grid
+- **Relevance:** high
+### 📄 Deep reinforcement learning based energy management for a hybrid electric vehicle
+- **Relevance:** high
+### 📄 Deep reinforcement learning based optimal schedule for a battery swapping station considering uncertainties
+- **Relevance:** high
+### 📄 Deep reinforcement learning-based controller for SOC management of multi-electrical energy storage system
+- **Relevance:** high
+- **Abstract:** Abstract—The ongoing reduction of the total rotational more time for other control actions to restore the frequency inertia in modern power systems brings about faster frequency to its nominal value. The increased penetration of renewable dynamics that must be limited to maintain a secure and eco- e...
+### 📄 Deep-reinforcement-learning-based capacity scheduling for PV-battery storage system
+- **Relevance:** high
+### 📄 Energy-efficient autonomous vehicle control using reinforcement learning and interactive traffic simulations
+- **Relevance:** high
+### 📄 Image-based defect detection in lithium-ion battery electrode using convolutional neural networks
+- **Relevance:** high
+### 📄 Insights from machine learning of carbon electrodes for electric double layer capacitors
+- **Relevance:** high
+### 📄 Joint charging and relocation recommendation for e-taxi drivers via multi-agent mean field hierarchical reinforcement learning
+- **Relevance:** high
+### 📄 MARLA-SG: Multi-agent reinforcement learning algorithm for efficient demand response in smart grid
+- **Relevance:** high
+### 📄 Machine learning approach for systematic analysis of energy efficiency potentials in manufacturing processes: A case of battery production
+- **Relevance:** high
+### 📄 New ANN results on a major benchmark for the prediction of RUL of Lithium Ion batteries in electric vehicles
+- **Relevance:** high
+### 📄 Reinforcement learning-based distributed BESS management for mitigating overvoltage issues in systems with high PV penetration
+- **Relevance:** high
+### 📄 Reinforcement learning-based load forecasting of electric vehicle charging station using Q-learning technique
+- **Relevance:** high
+### 📄 Stochastic modeling and integration of plug-in hybrid electric vehicles in reconfigurable microgrids with deep learning-based forecasting
+- **Relevance:** high
+### 📄 The V2G process with the predictive model
+- **Relevance:** high
+### 📄 Vehicle to grid frequency regulation capacity optimal scheduling for battery swapping station using deep Q-network
+- **Relevance:** high
+### 📄 A human-machine reinforcement learning method for cooperative energy management
+- **Relevance:** high
+### 📄 Adaptive cruise control for autonomous electric vehicles based on q-learning algorithm
+- **Relevance:** high
+### 📄 Advanced machine learning approaches for state-of-charge prediction of Li-ion batteries under multisine excitation
+- **Relevance:** high
+### 📄 Application of machine learning to sleep stage classification
+- **Relevance:** high
+### 📄 Deep reinforcement learning for continuous electric vehicles charging control with dynamic user behaviors
+- **Relevance:** high
+### 📄 Driving mode predictor-based real-time energy management for dual-source electric vehicle
+- **Relevance:** high
+### 📄 Electric vehicle charging via machine-learning pattern recognition
+- **Relevance:** high
+### 📄 Machine-learning-based real-time economic dispatch in islanding microgrids in a cloud-edge computing environment
+- **Relevance:** high
+### 📄 Mass load prediction for lithium-ion battery electrode clean production: A machine learning approach
+- **Relevance:** high
+### 📄 Multi agent deep Q-reinforcement learning for autonomous low voltage grid control
+- **Relevance:** high
+### 📄 Smart online charging algorithm for electric vehicles via customized actor--critic learning
+- **Relevance:** high
+- **Abstract:** Abstract—With the advances in the Internet of Things tech- future charging demand is known in advance, such that the nology, electric vehicles (EVs) have become easier to schedule EV charging can be scheduled to flatten the total load [2]. in daily life, which is reshaping the electric load curve. I...
+### 📄 A Model-Data-Fusion Pole Piece Thickness Prediction Method With Multisensor Fusion for Lithium Battery Rolling Machine
+- **Relevance:** high
+### 📄 A blockchain-enabled demand management and control framework driven by deep reinforcement learning
+- **Relevance:** high
+### 📄 A machine learning method for ev range prediction with updates on route information and traffic conditions
+- **Relevance:** high
+
+- **Year:** 2022
+- **Authors:** T Jayakumar, Natesh Gowda, R Sujatha (+6 others)
+- **Journal:** Energy Reports
+- **Abstract:** The ability to predict battery residual life (RL) in advance is critical for ensuring a reliable supply of energy and the most efficient use of that energy. When it comes to precisely predicting the level of charge of batteries, battery management systemsmustbedurableandtrustworthy(SoC).Becauseofthe...
+- **Keywords:** accuracy, artificial intelligence, batteries, battery, battery degradation, cathode, data, deep learning
+
+- **Year:** 2009
+- **Authors:** John Vlachogiannis
+- **Journal:** IEEE Transactions on Power Systems
+- **Abstract:** Abstract—Anewformulationandsolutionofprobabilisticcon- settings satisfying constraints over a whole planning period. strainedloadflow(PCLF)problemsuitableformodernpowersys- Dispatching effects and topological variations are considered tems with wind power generation and electric vehicles (EV) de- us...
+- **Keywords:** anewformulationandsolutionofprobabilisticcon, constrained, constraints, control, electric vehicle, flow, load, load flow
+
+- **Year:** 2014
+- **Authors:** Stoyan Dimitrov, Redouane Lguensat
+- **Abstract:** Abstract—This paper presents an online reinforcement learn- about the theory behind the Q-learning method, respectively. ingbasedapplicationwhichincreasestherevenueofoneparticu- Sections IV contains the details of the model we consider larelectricvehicles(EV)station,connectedtoarenewablesource and t...
+- **Keywords:** action, algorithm, charging, charging station, day, electric vehicle, energy, fast charging
+
+- **Year:** 2015
+- **Authors:** Fangming Liu, Ting Liu, Yuzhuo Fu
+- **Abstract:** Abstract—The state of charge(SoC)’s real time estimation plays an essential role in effective energy management, and BatteryType Parameters Value has great significance to efficient operation and safe of electric Fullvoltage 4.2V Batterycell vehicles(EV). Many methods, such as current integration, o...
+- **Keywords:** algorithm, ann, ann model, battery, battery capacity, bms, circuit, circuit voltage
+
+- **Year:** 2015
+- **Authors:** Stijn Vandael, Bert Claessens, Damien Ernst (+2 others)
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—This paper addresses the problem of defining a Sets day-ahead consumption plan for charging a fleet of electric iθ Set of all charging parameters available at day D for vehicles (EVs), and following this plan during operation. A D electric vehicle (EV) i. challenge herein is the beforehand ...
+- **Keywords:** aggregator, ahead, belgium, charging, charging parameters, consumption, control, day
+
+- **Year:** 2016
+- **Authors:** Chenn-Jung Huang, Kai-Wen Hu, Heng-Ming Chen (+3 others)
+- **Journal:** Applied Artificial Intelligence
+- **Abstract:** Electric vehicles (EVs) have become increasingly popular all over the world in recent years. Many countries have been offering reward policies and facilitating the establishment of EV charging stations and battery exchange stations to encou- rageuseofthesevehiclesbythepublic.However,intermsof electr...
+- **Keywords:** artificial intelligence, battery, battery exchange, charging, charging station, charging stations, driving, electric
+
+- **Year:** 2017
+- **Authors:** Gae-Won You, Sangdo Park, Dukjin Oh
+- **Journal:** IEEE Transactions on Industrial Electronics
+- **Abstract:** Abstract—In electric vehicle (EV) systems, diagnosing battery states, such as state of health (SOH), is crucial to guarantee safety. Such a diagnosis can be used to deter- mine the replacement time for a battery or to assess the drivingmileage.Themajorityofstudiesinrecentdecades have defined SOH und...
+- **Keywords:** assumptions, batteries, battery, battery aging, battery management system, capacity, charge, data
+
+- **Year:** 2017
+- **Authors:** Wided Zine, Zaatar Makni, Eric Monmasson (+2 others)
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—In this paper, a novel rotor position estimator For these reasons, a great deal of position self-sensing foraninteriorpermanentmagnetsynchronousmotorispre- schemeshasbeenproposedmainlyforpermanentmagnetsyn- sentedandevaluated.Theproposedestimatorliesonone chronousmachines.Theseself-sensings...
+- **Keywords:** back, com, data, drives, electric vehicle, estimation, estimator, france
+
+- **Year:** 2018
+- **Authors:** Hicham Chaoui, Hamid Gualous, Loic Boulon (+1 others)
+- **Abstract:** Abstract—In recent years, energy management systems have performance. Hence, energy management of such systems is become an emerging research topic. This concept allows the a serious issue as it significantly influences the performance distribution of energy-intensive loads among various energy of e...
+- **Keywords:** among, batteries, battery, cid, cnn, devices, electric, electric vehicle
+
+- **Year:** 2019
+- **Authors:** Teng Liu, Xiaosong Hu, Weihao Hu (+1 others)
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—This paper proposes a heuristic planning en- electric vehicles (PHEVs) are regarded today as a promising ergy management controller, based on a Dyna agent of technology, because of their excellent fuel efficiency [2]. En- reinforcementlearning(RL)approach,forreal-timefuelsav- ergy managemen...
+- **Keywords:** bat, battery degradation, china, control, dyna, electric, electric vehicle, energy
+
+- **Year:** 2019
+- **Authors:** Zhenyu Zhou, Bingchen Wang, Yufei Guo (+1 others)
+- **Journal:** IEEE Transactions on Emerging Topics in Computational Intelligence
+- **Abstract:** Abstract—Byleveragingthecharginganddischargingcapabili- vehicles(EVs)posesnewchallengesonsmartenergymanage- tiesofInternetofelectricvehicles(IoEV),demandresponse(DR) ment.Specifically,inordertobalanceloadandsupply,alarge can be implemented in smart cities to enable intelligent energy number of centr...
+- **Keywords:** battery capacity, blockchain, byleveragingthecharginganddischargingcapabili, cities, computational, computational intelligence, consortium, contract
+
+- **Year:** 2019
+- **Authors:** Hepeng Li, Zhiqiang Wan, Haibo He
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—Electricvehicles(EVs)havebeenpopularlyadopted chargingschedulestooff-peakhoursthroughDR[5].InaDR and deployed over the past few years because they are program,EVchargingschedulescanbeoptimizedinresponse environment-friendly.Whenintegratedintosmartgrids,EVscan totime-varyingprices[6]toreduce...
+- **Keywords:** advantage, charging, charging discharging, cid, cid cid, cmdp, constrained, constraint
+
+- **Year:** 2019
+- **Authors:** Tao Qian, Chengcheng Shao, Xiuli Wang (+1 others)
+- **Journal:** IEEE transactions on smart grid
+- **Abstract:** Abstract—A coordinated operation of smart grid (SG) and Parameters intelligent transportation system (ITS) provides electric vehi- π Value of unit time of EV driver cle (EV) owners with a myriad of power and transportation d Distance from node i to j network data for EV charging navigation. However,...
+- **Keywords:** battery, battery capacity, cch, charging, charging navigation, charging station, cid, cid cid
+
+- **Year:** 2019
+- **Authors:** Yaodong Yang, Jianye Hao, Yan Zheng (+1 others)
+- **Abstract:** Abstract which makes the power grid hard to maintain the demand- supply balance. With the increasing number of active elec- Smart grids are contributing to the demand-side tricitycustomersandtheadventofdecentralizedpowergen- management by integrating electronic equipment, eration technologies, the p...
+- **Keywords:** balance, battery, battery capacity, cid, cid cid, consumption, demand, demand side
+
+- **Year:** 2019
+- **Authors:** Yoichi Takagishi, Takumi Yamanaka, Tatsuya Yamaue
+- **Journal:** Batteries
+- **Abstract:** Wehaveproposedadata-drivenapproachfordesigningthemesoscaleporousstructuresof Li-ionbatteryelectrodes,usingthree-dimensionalvirtualstructuresandmachinelearningtechniques. Over2000artificial3Dstructures,assumingapositiveelectrodecomposedofrandomlypackedspheres astheactivematerialparticles,aregenerated...
+- **Keywords:** aanndd, andthecharge, aregenerated, assumingapositiveelectrodecomposedofrandomlypackedspheres, astheactivematerialparticles, battery, chemical, chemicalmodel
+
+- **Year:** 2019
+- **Authors:** Korosh Vatanparvar, Mohammad Al Faruque
+- **Abstract:** Abstract—Cyber-Physical Systems (CPS) are growing inordertodecidehowmucheachcellcanprovidepowerand with added complexity and functionality. Multidisciplinary energy at each state. The BMS is responsible to prevent over interactions with physical systems are the major keys to loading, over charging, ...
+- **Keywords:** battery, battery capacity, battery cells, battery management system, behavior, bms, cells, cid
+
+- **Year:** 2020
+- **Authors:** Shaohui Chen, Di Zhou, Juntao Ye (+2 others)
+- **Abstract:** Abstract—The traditional calibration method for charging [4], but this method is time-consuming and inefficient. piles which used forelectric vehicles relies on the field inspection Another new type of calibration is called remote calibration of standard devices of metrology agency. However, with th...
+- **Keywords:** another, artificial intelligence, calibration, charging, charging pile, cid, cid cid, data
+
+- **Year:** 2020
+- **Authors:** Peng Wang, Jie Fan, Yang Ou (+5 others)
+- **Abstract:** Abstract. A suitable battery model plays an important role in assisting accurate state estimation for power battery used in electric vehicles. This paper compares the applications of four commonly used machine learning methods (decision tree, k-nearest neighbour, support vector machine and neural ne...
+- **Keywords:** adaptability, battery, cid, cid cid, data, different, electric vehicle, four
+
+- **Year:** 2020
+- **Authors:** Lei Xi, Lipeng Zhou, Yanchun Xu (+1 others)
+- **Journal:** IEEE Transactions on Sustainable Energy
+- **Abstract:** Abstract—Asthepenetrationrateofnewenergies,energystor- output of the frequency control resource in real time in power agedevicesandelectric vehiclesincreases continuouslyinpower grids,thusthesystemfrequencyismorestable[6]–[7]. grid, power grid faces strong random disturbances, as well as However, in...
+- **Keywords:** agc, algorithm, area, asthepenetrationrateofnewenergies, cid, control, electric vehicle, energy
+
+- **Year:** 2020
+- **Authors:** Guangyu Li, Chen Gong, Lin Zhao (+2 others)
+- **Abstract:** Abstract—Insufficientandfragiledeliveryofenormouscharg- vehicle-to-vehicle (V2V) charging concept (where energy can ing data imposes great challenges on the productive operations be exchanged among EVs without the assistances of charging of smart grid systems. In this paper, we propose an efficient ...
+- **Keywords:** among, artificial intelligence, charging, communication, connectivity, data, delivery, energy
+
+- **Year:** 2020
+- **Authors:** Guodong Du, Yuan Zou, Xudong Zhang (+3 others)
+- **Journal:** Energy
+- **Keywords:** anoveldeepreinforcementlearningalgorithmdeepq-, cid, control, deep, dyna, electric vehicle, energy, energy management
+
+- **Year:** 2020
+- **Authors:** Yuan Gao, Jiajun Yang, Ming Yang (+1 others)
+- **Journal:** IEEE Transactions on Industry Applications
+- **Abstract:** Abstract—Forabatteryswappingstation(BSS),thestochastic max(x,y) Output the larger one where x, y all belong to the operationofelectricbuses(EBs)andtheuncertaintyofelectricity realnumberfield. pricescauseunnecessaryeconomiclosses.Tominimizetheoper- (cid:2) Gradientfunction. atingcostsoftheBSS,thisart...
+- **Keywords:** battery, battery capacity, battery swapping, bss, charging, cid, control, demand
+
+- **Year:** 2020
+- **Authors:** Francisco Gorostiza, Francisco Gonzalez-Longatt
+- **Journal:** IEEE Transactions on Smart Grid
+- **Keywords:** action, agent, control, controller, deep, eess, eesss, electric vehicle
+
+- **Year:** 2020
+- **Authors:** Bin Huang, Jianhui Wang
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—Investor-ownedphotovoltaic-batterystoragesystems Investor-owned PV-BSS can be regarded as an indepen- (PV-BSS)cangainrevenuebyprovidingstackedservices,includ- dent entity to the power grid, with the goal of maximizing ing PV charging and frequency regulation, and by performing the revenue. ...
+- **Keywords:** action, agent, battery, battery capacity, bss, capacity, charging, control
+
+- **Year:** 2020
+- **Authors:** Huayi Li, Nan Li, Ilya Kolmanovsky (+1 others)
+- **Abstract:** Abstract—Connected and autonomous vehicles are expected improve fuel economy [12], [13], but it also increases the to improve mobility and transportation, as well as to provide problem complexity. In particular, there are subtle trade- energy efficiency benefits. The integration of safety and energy...
+- **Keywords:** also, battery, battery capacity, control, efficiency, electric vehicle, energy, energy efficiency
+
+- **Year:** 2020
+- **Authors:** Olatomiwa Badmos, Andreas Kopp, Timo Bernthaler (+1 others)
+- **Journal:** Journal of Intelligent Manufacturing
+- **Abstract:** Duringthemanufacturingoflithium-ionbatteryelectrodes,itisdifficulttopreventcertaintypesofdefects,whichaffectthe overallbatteryperformanceandlifespan.Deeplearningcomputervisionmethodswereusedtoevaluatethequalityoflithium- ionbatteryelectrodeforautomateddetectionofmicrostructuraldefectsfromlightmicros...
+- **Keywords:** anode, battery, cathode, cnn, coating, computer vision · microstructure · deep learning · convolutional neural networks · lithium-ion battery ·, convolutional neural network, deep learning
+
+- **Year:** 2020
+- **Authors:** Musen Zhou, Alejandro Gallegos, Kun Liu (+2 others)
+- **Journal:** Carbon
+- **Abstract:** Recent years have witnessed the broad use of carbon electrodes for electric double layer capacitors (EDLCs) because of large surface area, high porosity and low cost. Whereas experimental investigations are mostly focused on the device performance, computational studies have been rarely concerned wi...
+- **Keywords:** carbon, carbon electrodes, density, edlcs, electrode, electrodes, elsevier, energy
+
+- **Year:** 2020
+- **Authors:** Enshu Wang, Rong Ding, Zhaoxing Yang (+6 others)
+- **Journal:** IEEE Transactions on Mobile Computing
+- **Abstract:** Abstract—Nowadays,mostofthetaxidrivershavebecomeusersoftherelocationrecommendationserviceofferedbyonlineride- hailingplatforms(e.g.,UberandDidiChuxing),whichcouldoftentimesleaddriverstoplaceswithprofitableorders.Atthesametime, electrictaxis(e-taxis)areincreasinglyadoptedandgraduallyreplacinggasoline...
+- **Keywords:** agent, atthesametime, charging, charging station, drivers, fast charging, hailingplatforms, learning
+
+- **Year:** 2020
+- **Authors:** Sally Aladdin, Samah El-Tantawy, Mostafa Fouda (+1 others)
+- **Journal:** IEEE access
+- **Abstract:** Thepopulationissharplygrowinginthelastdecade,resultinginnon-potentialpowerrequests in dense urban areas, especially with the traditional power grid where the system is not compatible with theinfrequentchanges.Smartgridshaveshownstrongpotentialtoeffectivelymitigateandsmoothpower consumptioncurvestoav...
+- **Keywords:** action, also, cost, demand, demandresponse, dense, device, devices
+
+- **Year:** 2020
+- **Authors:** Sebastian Thiede, Artem Turetskyy, Thomas Loellhoeffel (+3 others)
+- **Journal:** CIRP Annals
+- **Keywords:** battery, battery production, cid, demand, drying, drying process, efficiency, electric vehicle
+
+- **Year:** 2020
+- **Authors:** In{\`e}s Jorge, Ahmed Samet, Tedjani Mesbahi (+1 others)
+- **Abstract:** Abstract—LithiumIonbatteriesareacorecomponentofmany financiallyandenvironmentally[3].Therefore,itbecameclear lately designed devices. It is of crucial importance to be able to thatprogressshouldnotonlybemadeonbatteriesthemselves fully master the behaviour of batteries in order to meet the but also o...
+- **Keywords:** batteries, battery, behaviour, cells, cnn, convolutional neural network, cycle, data
+
+- **Year:** 2020
+- **Authors:** Mohammed Al-Saffar, Petr Musilek
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—Highlevelsofpenetrationofdistributedphotovoltaic P PV PV power generation kW. generatorscancauseseriousovervoltageissues,especiallyduring Prev Reverse power of the assisting buses kW. periods of high power generation and light loads. There have P BESS charging power kW. been many solutions ...
+- **Keywords:** bess, buses, capacity, control, csocc, distribution, energy, energy storage
+
+- **Year:** 2020
+- **Authors:** Morteza Dabbaghjamanesh, Amirhossein Moeini, Abdollah Kavousi-Fard
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—The electric vehicles’ (EVs) rapid growth can accurateEVchargingloaddemandforecastingisoneofthekey potentially lead power grids to face new challenges due concernsfromthepowergridpointsofview[4],[5]. to load profile changes. To this end, a new method is pre- Recent advances in the plug-in h...
+- **Keywords:** ann, artificial, artificial intelligence, battery capacity, charging, charging station, cnn, coordinated
+
+- **Year:** 2020
+- **Authors:** Morteza Dabbaghjamanesh, Abdollah Kavousi-Fard, Jie Zhang
+- **Journal:** IEEE Transactions on Intelligent Transportation Systems
+- **Abstract:** Abstract—Thispaperinvestigatestheimpactofuncoordinated, coordinated, and smart charging of plug-in hybrid electric A  Projected area of conductor(m2/Linear vehicles (PHEVs) on the optimal operation of microgrids (MGs) m). incorporatingthedynamiclinerating(DLR)securityconstraint. D Conductor diamete...
+- **Keywords:** azimuth, base, capacity, charging, conductor, coordinated, current, deep learning
+
+- **Year:** 2020
+- **Authors:** Bart{\l}omiej Mroczek, Amanda Ko{\l}ody{\'n}ska
+- **Journal:** IEEE Access
+- **Abstract:** The paper proposes using a predictive model to optimize the use of electricity in the V2G (vehicletogrid)service.Thenoveltyofthemechanismasakindofmodelpredictivecontrol(MPC)isthat itseeksaneffectivewayofmanagingelectricenergyinanElectricVehicle(EV).Additionally,itproposes a new method of predicting ...
+- **Keywords:** available, cid, demand, electric, electric car, electric vehicle, electricity, energy
+
+- **Year:** 2020
+- **Authors:** Xinan Wang, Jianhui Wang, Jianzhe Liu
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—Battery swapping stations (BSSs) are ideal S¯ /S Battery SOC upper/lower bound for participating in candidates for fast frequency regulation services (FFRS) FFRS. duetotheirlargebatterystockcapacity.Inaddition,BSSs F Lithium-ionbatterypricein$/kWh can precharge batteries for customers and t...
+- **Keywords:** batteries, battery, battery degradation, battery swapping, bss, bsss, capacity, energy
+
+- **Year:** 2021
+- **Authors:** Yuechuan Tao, Jing Qiu, Shuying Lai (+3 others)
+- **Journal:** IEEE Transactions on Industrial Informatics
+- **Abstract:** Abstract—The increasing penetration of distributed en- Index Terms—Electric vehicles (EVs), energy manage- ergy resources and a large volume of unprecedented data ment, human-machine, reinforcement learning (RL), ther- from smart metering infrastructure can help consumers mostaticallycontrolledloads...
+- **Keywords:** battery degradation, charging, cid, cid cid, dis, discharging, electric, electric vehicle
+
+- **Year:** 2021
+- **Authors:** Angelo Coppola, Alberto Petrillo, Renato Rizzo (+1 others)
+- **Abstract:** Abstract—This work presents an ACC-like longitudinal con- are based on rules defining the reference behavior of the AV troller for an autonomous electric vehicle, named Ego-Vehicle, for each scenario, as well as some characteristic variables are based on a Deep Deterministic Reinforcement Learning a...
+- **Keywords:** acc, action, algorithm, autonomous, battery, battery capacity, cid, control
+
+- **Year:** 2021
+- **Authors:** Adrienn Dineva
+- **Abstract:** Abstract—The technological progress of e-Mobility the direct measurement is usually impractical or has led to an increased use of Electric Vehicles (EVs), impossible. Since, the suitable estimation methods are which today satisfies the majority of the customers’ still the focus of much research. Alo...
+- **Keywords:** battery, battery aging, battery management system, bms, cell, charge, cid, cid cid
+
+- **Year:** 2021
+- **Authors:** Andrew Smith, Hardik Anand, Snezana Milosavljevic (+3 others)
+- **Abstract:** Abstract—Sleep studies are imperative to recapitulate phe- Sleep is essential for optimal health. Sleep is one of the notypes associated with sleep loss and uncover mechanisms most critical and ubiquitous biological processes, next to contributing to psychopathology. Most often, investigators man- e...
+- **Keywords:** artificial, classifier, data, decision, duration, eeg, electrode, emg
+
+- **Year:** 2021
+- **Authors:** Linfang Yan, Xia Chen, Jianyu Zhou (+2 others)
+- **Journal:** IEEE Transactions on Smart Grid
+- **Abstract:** Abstract—ThispaperaimstocracktheindividualEVcharging share has increased significantly and maintained upward in schedulingproblemconsideringthedynamicuserbehaviorsand recent years [2]. As the EV penetration increases, the charg- theelectricityprice.TheuncertaintyoftheEVchargingdemand ing infrastruct...
+- **Keywords:** also, anxiety, artificial intelligence, battery, battery capacity, behaviors, charging, charging station
+
+- **Year:** 2021
+- **Authors:** Marouane Adnane, Bảo-Huy Nguyễn, Ahmed Khoumsi (+1 others)
+- **Journal:** IEEE Transactions on Transportation Electrification
+- **Abstract:** Abstract—Tominimizebatteryagingofelectricvehicles(EVs), approach.ThecombinationofbatteryandSCs formsa hybrid it is paramount to manage efficiently their energy consumption. energy storage system (HESS) which can be configured as Anenergy management strategy (EMS)hasrecentlybeendevel- active or semi-...
+- **Keywords:** active, battery, battery aging, battery degradation, current, dmp, driving, electric vehicle
+
+- **Year:** 2021
+- **Authors:** Theron Smith, Joseph Garcia, Gregory Washington
+- **Journal:** Journal of Energy Engineering
+- **Abstract:** Thispaperpresentsmachinelearningvalley-filling(MLVF)toenhanceplug-inelectricvehicle(PEV)chargingatthelocalpower levelwhileminimizingtheeffectsofuncontrolledPEVcharging.Thisstudyinvestigatedwhetheraneuralnetworkalgorithmcouldlearnto identifywhentobeginchargingaPEVbydistinguishinglowandhighdemandsecti...
+- **Keywords:** algorithm, baseload, charging, cnn, convolutional neural network, data, demand, distribution transformer
+
+- **Year:** 2021
+- **Authors:** Wei Dong, Qiang Yang, Wei Li (+1 others)
+- **Journal:** IEEE Internet of Things Journal
+- **Abstract:** Abstract—The paradigm of the Internet of Things (IoT) and construction cost [2]. The power generation intermittency of cloud-edge computing plays a significant role in future smart massively penetrated distributed renewable power sources and grids. The data-driven solution integrating the artificial...
+- **Keywords:** artificial intelligence, brings, cloud, computing, demand, dispatch, economic, edge
+
+- **Year:** 2021
+- **Authors:** Kailong Liu, Zhongbao Wei, Zhile Yang (+1 others)
+- **Journal:** Journal of Cleaner Production
+- **Abstract:** Materials Mixing Coating Slurries IFVs (MC, STLR, viscosity ) Mass load Maritime CPs (CG ) transportation Batteries Cutting Drying and Calendering Electrode MC STLR V CG ledoM noissergeR RPG ARD Importance Weights gnixiM gnitaoC Electrode Mass load 4 5 A list of terminology and symbols 6 Li-ion lith...
+- **Keywords:** ard, battery, battery electrode, battery electrode production, battery production, calendering, cid, cid cid
+
+- **Year:** 2021
+- **Authors:** Michael Kelker, Lars Quakernack, Jens Haubrock
+- **Abstract:** Abstract— Due to the steadily increasing share of decentralized important step of the energy transition [3]. To ensure high renewable energies in the German energy system, flexibilities in power quality at all grid levels, safe and reliable operation of the low-voltage (LV) grid such as battery stor...
+- **Keywords:** agent, artificial intelligence, autonomous, bss, charging, control, dqn, due
+
+- **Year:** 2021
+- **Authors:** Yongsheng Cao, Hao Wang, Demin Li (+1 others)
+- **Journal:** IEEE Internet of Things Journal
+- **Keywords:** actor, actor critic, algorithm, artificial intelligence, battery capacity, charging, charging problem, charging station
+
+- **Year:** 2022
+- **Authors:** Yanjun Xiao, Shuhan Deng, Furong Han (+3 others)
+- **Journal:** IEEE Access
+- **Abstract:** Trendpredictionbasedonsensordataisanimportanttopicinthethicknesscontrolsystemof lithiumbatteryelectrodemills.Asthenumberofsensorsincreases,wecanmeasureandstoremoreandmore data. The characteristics of nonlinearity, uncertainty, and time-variability in the lithium battery electrode thicknesscontrolsys...
+- **Keywords:** battery, battery capacity, battery electrode, coating process, data, deep learning, electrode, electrode thickness
+
+- **Year:** 2022
+- **Authors:** Rui Ma, Zhehan Yi, Yingmeng Xiang (+3 others)
+- **Journal:** IEEE Transactions on Industrial Electronics
+- **Abstract:** Abstract—The rapid development of Internet-of-Things P(t) Electricitypriceattimet. in smart grid has enabled millions of grid-connected dis- λt,λt(·) Incentive rate at time t and function of the tributedcontrollableresources(DCR;e.g.,electricvehicles, controllable loads) to provide service to the gr...
+*[Content truncated due to length limits]*
+
+Paper: Machine Learning approach for Prediction of residual energy in batteries (2022)
+Authors: T Jayakumar, Natesh Gowda, R Sujatha
+Abstract: The ability to predict battery residual life (RL) in advance is critical for ensuring a reliable supply of energy and the most efficient use of that energy. When it comes to precisely predicting the l...
+Keywords: accuracy, artificial intelligence, batteries, battery, battery degradation
+
+Paper: An improved SoC estimation algorithm based on artificial neural network (2015)
+Authors: Fangming Liu, Ting Liu, Yuzhuo Fu
+Abstract: Abstract—The state of charge(SoC)’s real time estimation plays an essential role in effective energy management, and BatteryType Parameters Value has great significance to efficient operation and safe...
+Keywords: algorithm, ann, ann model, battery, battery capacity
+
+Paper: Leveraging Artificial Intelligence for Advanced Diagnostics and Life Cycle Assessment of Traction Batteries (2024)
+Authors: Sahar Qaadan, Abdullah Ahmed, Myrel Tiemann
+Abstract: Abstract—The growing interest in high-performance batteries notably within municipal recycling facilities, and long-life battery technologies, driven by the rapidly which are characterized by labor-in...
+Keywords: artificial intelligence, batteries, battery, battery aging, battery capacity
+
+Paper: Machine learning assisted synthesis of lithium-ion batteries cathode materials (2022)
+Authors: Chi Liow, Hyeonmuk Kang, Seunggu Kim
+Keywords: capacity, cathode, data, design, electric vehicle
+
+Paper: A novel disassembly process of end-of-life lithium-ion batteries enhanced by online sensing and machine learning techniques (2023)
+Authors: Yingqi Lu, Maede Maftouni, Tairan Yang
+Abstract: Aneffectivelithium-ionbattery(LIB)recyclinginfrastructureisofgreatimportancetoalleviatetheconcernsoverthedisposal ofwasteLIBsandthesustainabilityofcriticalelementsforproducingLIBcomponents.TheEnd-of-l...
+Keywords: aneffectivelithium, batteries, battery, cathode, cnn
+
+Paper: An edge intelligence-based framework for online scheduling of soft open points with energy storage (2023)
+Authors: Tao Qian, Wenlong Ming, Chengcheng Shao
+Abstract: Abstract—Edgeintelligence(EI)isanemerginginterdiscipline NOMENCLATURE to advance the coordination of artificial intelligence and edge Sets, Index and Distributions computing. EI sinks the computation ...
+Keywords: artificial intelligence, computing, data, distribution, drl
+
+Paper: An efficient reinforcement learning based charging data delivery scheme in VANET-enhanced smart grid (2020)
+Authors: Guangyu Li, Chen Gong, Lin Zhao
+Abstract: Abstract—Insufficientandfragiledeliveryofenormouscharg- vehicle-to-vehicle (V2V) charging concept (where energy can ing data imposes great challenges on the productive operations be exchanged among EV...
+Keywords: among, artificial intelligence, charging, communication, connectivity
+
+Paper: Stochastic modeling and integration of plug-in hybrid electric vehicles in reconfigurable microgrids with deep learning-based forecasting (2020)
+Authors: Morteza Dabbaghjamanesh, Abdollah Kavousi-Fard, Jie Zhang
+Abstract: Abstract—Thispaperinvestigatestheimpactofuncoordinated, coordinated, and smart charging of plug-in hybrid electric A  Projected area of conductor(m2/Linear vehicles (PHEVs) on the optimal operation o...
+Keywords: azimuth, base, capacity, charging, conductor
+
+Paper: Deep learning of experimental electrochemistry for battery cathodes across diverse compositions (2024)
+Authors: Peichen Zhong, Bowen Deng, Tanjin He
+Keywords: artificial intelligence, battery, capacity, cathode, cycle
+
+답변 가이드라인:
+- 제공된 컨텍스트 정보를 기반으로 답변하세요 (Base your answer on the provided context)
+- 구체적인 논문 제목, 저자명을 포함하세요 (Include specific paper titles and author names)
+- 불확실한 정보는 명시하세요 (Explicitly state uncertain information)
+- 관련성 높은 정보를 우선하세요 (Prioritize highly relevant information)
+
+관련 논문이나 저자를 구체적으로 언급해주세요 (Please mention relevant papers or authors specifically).
+
+질문: What machine learning techniques are used for battery SoC prediction?
+
+답변:
+============================================================
+
+🎉 디버깅 성공! 이제 정상적인 답변을 받을 수 있습니다.
+
+📝 상세 로그는 다음 파일에서 확인하세요:
+   debug_logs/retrieval_debug_20250607_174122.txt
