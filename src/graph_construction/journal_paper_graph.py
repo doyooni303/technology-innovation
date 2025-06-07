@@ -95,6 +95,7 @@ class JournalPaperGraphBuilder:
         for i, paper in enumerate(tqdm(papers_metadata, desc="Processing papers")):
             paper_id = f"paper_{i}"
             title = paper.get("title", "")
+            abstract = paper.get("abstract", "")
             journal = paper.get("journal", "")
             year = paper.get("year", "")
             authors = paper.get("authors", [])
@@ -115,6 +116,7 @@ class JournalPaperGraphBuilder:
             # 논문-저널 매핑 저장
             self.paper_journals[paper_id] = {
                 "title": title,
+                "abstract": abstract,
                 "journal": normalized_journal,
                 "original_journal": journal,
                 "year": year,
@@ -122,6 +124,8 @@ class JournalPaperGraphBuilder:
                 "keywords": keywords,
                 "author_count": len(authors) if authors else 0,
                 "keyword_count": len(keywords) if keywords else 0,
+                "has_abstract": bool(abstract.strip()),
+                "abstract_length": len(abstract),
             }
 
             # 저널-논문 매핑 저장
@@ -129,6 +133,7 @@ class JournalPaperGraphBuilder:
                 {
                     "paper_id": paper_id,
                     "title": title,
+                    "abstract": abstract,
                     "year": year,
                     "authors": authors,
                     "keywords": keywords,
@@ -308,11 +313,14 @@ class JournalPaperGraphBuilder:
                 paper_id,
                 node_type="paper",
                 title=paper_info["title"],
+                abstract=paper_info.get("abstract", ""),
                 year=paper_info["year"],
                 author_count=paper_info["author_count"],
                 keyword_count=paper_info["keyword_count"],
                 authors=paper_info["authors"][:5],  # 처음 5명만 저장
                 keywords=paper_info["keywords"][:10],
+                has_abstract=paper_info.get("has_abstract", False),
+                abstract_length=paper_info.get("abstract_length", 0),
             )  # 처음 10개만 저장
 
         # Published_in 엣지 추가 (Paper → Journal)
@@ -465,11 +473,14 @@ class JournalPaperGraphBuilder:
 
                 paper_info[node] = {
                     "title": node_data.get("title", ""),
+                    "abstract": node_data.get("abstract", ""),
                     "journal": journal_name,
                     "year": node_data.get("year", ""),
                     "author_count": node_data.get("author_count", 0),
                     "keyword_count": node_data.get("keyword_count", 0),
                     "authors": node_data.get("authors", []),
+                    "has_abstract": node_data.get("has_abstract", False),
+                    "abstract_length": node_data.get("abstract_length", 0),
                 }
 
         return journal_info, paper_info
@@ -500,23 +511,61 @@ class JournalPaperGraphBuilder:
         with open(graph_file, "w", encoding="utf-8") as f:
             json.dump(graph_data, f, ensure_ascii=False, indent=2)
 
-        # 2. GraphML 파일로 저장
+        # 2. ✅ GraphML 파일로 저장 (XML 호환성 개선)
         try:
-            # GraphML 호환을 위해 그래프 복사 및 속성 변환
             G_graphml = G.copy()
 
-            # 리스트 타입 속성들을 문자열로 변환
+            # XML 호환 문자열 정제 함수
+            def clean_xml_string(text):
+                if not isinstance(text, str):
+                    text = str(text)
+
+                # NULL 바이트 및 제어 문자 제거
+                import re
+
+                # XML 1.0에서 허용되지 않는 문자들 제거
+                text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
+
+                # XML 특수 문자 이스케이프
+                text = text.replace("&", "&amp;")
+                text = text.replace("<", "&lt;")
+                text = text.replace(">", "&gt;")
+                text = text.replace('"', "&quot;")
+                text = text.replace("'", "&apos;")
+
+                return text
+
+            # 모든 노드 속성 정제
             for node in G_graphml.nodes():
                 for attr_name, attr_value in G_graphml.nodes[node].items():
                     if isinstance(attr_value, list):
-                        G_graphml.nodes[node][attr_name] = ";".join(
-                            str(v) for v in attr_value
+                        # 리스트를 세미콜론으로 구분된 문자열로 변환 후 정제
+                        cleaned_list = [clean_xml_string(str(v)) for v in attr_value]
+                        G_graphml.nodes[node][attr_name] = ";".join(cleaned_list)
+                    elif isinstance(attr_value, str):
+                        # 문자열 정제 (Abstract 포함)
+                        G_graphml.nodes[node][attr_name] = clean_xml_string(attr_value)
+                    elif not isinstance(attr_value, (int, float, bool)):
+                        # 기타 타입을 문자열로 변환 후 정제
+                        G_graphml.nodes[node][attr_name] = clean_xml_string(
+                            str(attr_value)
                         )
-                    elif not isinstance(attr_value, (str, int, float, bool)):
-                        G_graphml.nodes[node][attr_name] = str(attr_value)
+
+            # 엣지 속성도 정제
+            for u, v in G_graphml.edges():
+                for attr_name, attr_value in G_graphml.edges[u, v].items():
+                    if isinstance(attr_value, str):
+                        G_graphml.edges[u, v][attr_name] = clean_xml_string(attr_value)
+                    elif not isinstance(attr_value, (int, float, bool)):
+                        G_graphml.edges[u, v][attr_name] = clean_xml_string(
+                            str(attr_value)
+                        )
 
             graphml_file = output_dir / "journal_paper_graph.graphml"
-            nx.write_graphml(G_graphml, graphml_file)
+            nx.write_graphml(
+                G_graphml, graphml_file, encoding="utf-8", prettyprint=True
+            )
+            print(f"   🔗 Graph (GraphML): {graphml_file}")
 
         except Exception as e:
             print(f"⚠️  GraphML 저장 중 오류 발생: {e}")
@@ -550,6 +599,8 @@ class JournalPaperGraphBuilder:
                     "paper_title": G.nodes[edge[0]].get("title", ""),
                     "journal_type": G.nodes[edge[1]].get("journal_type", ""),
                     "paper_year": G.nodes[edge[0]].get("year", ""),
+                    "has_abstract": G.nodes[edge[0]].get("has_abstract", False),
+                    "abstract_length": G.nodes[edge[0]].get("abstract_length", 0),
                 }
             )
             edge_list.append(edge_info)

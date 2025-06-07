@@ -87,6 +87,7 @@ class CitationGraphBuilder:
                 paper_id,
                 node_type="paper",
                 title=metadata.get("title", ""),
+                abstract=metadata.get("abstract", ""),
                 authors=metadata.get("authors", []),
                 year=metadata.get("year", ""),
                 journal=metadata.get("journal", ""),

@@ -77,6 +77,7 @@ class AuthorPaperGraphBuilder:
         for i, paper in enumerate(tqdm(papers_metadata, desc="Processing papers")):
             paper_id = f"paper_{i}"
             title = paper.get("title", "")
+            abstract = paper.get("abstract", "")
             authors = paper.get("authors", [])
             year = paper.get("year", "")
             journal = paper.get("journal", "")
@@ -98,6 +99,7 @@ class AuthorPaperGraphBuilder:
             # 논문-저자 매핑 저장
             self.paper_authors[paper_id] = {
                 "title": title,
+                "abstract": abstract,
                 "authors": clean_authors,
                 "year": year,
                 "journal": journal,
@@ -112,6 +114,7 @@ class AuthorPaperGraphBuilder:
                     {
                         "paper_id": paper_id,
                         "title": title,
+                        "abstract": abstract,
                         "year": year,
                         "journal": journal,
                         "keywords": keywords,
@@ -242,6 +245,7 @@ class AuthorPaperGraphBuilder:
 
             self.paper_stats[paper_id] = {
                 "title": paper_info["title"],
+                "abstract": paper_info["abstract"],
                 "author_count": author_count,
                 "collaboration_type": collaboration_type,
                 "year": paper_info["year"],
@@ -409,6 +413,7 @@ class AuthorPaperGraphBuilder:
                 paper_id,
                 node_type="paper",
                 title=stats["title"],
+                abstract=stats.get("abstract", ""),  # ✅ Abstract 추가
                 author_count=stats["author_count"],
                 collaboration_type=stats["collaboration_type"],
                 year=stats["year"],
@@ -634,6 +639,7 @@ class AuthorPaperGraphBuilder:
 
                 paper_info[node] = {
                     "title": node_data.get("title", ""),
+                    "abstract": node_data.get("abstract", ""),
                     "author_count": G.degree(node),
                     "collaboration_type": node_data.get("collaboration_type", ""),
                     "year": node_data.get("year", ""),

@@ -103,16 +103,19 @@ class SemanticSimilarityGraphBuilder:
 
         # 모든 논문을 노드로 추가
         for paper_id, metadata in paper_metadata_map.items():
+
             G.add_node(
                 paper_id,
                 node_type="paper",
                 title=metadata.get("title", ""),
+                abstract=metadata.get("abstract", ""),  # ✅ Abstract 추출
                 authors=metadata.get("authors", []),
                 year=metadata.get("year", ""),
                 journal=metadata.get("journal", ""),
                 keywords=metadata.get("keywords", []),
                 has_pdf=metadata.get("has_pdf", False),
                 has_abstract=metadata.get("has_abstract", False),
+                abstract_length=len(metadata.get("abstract", "")),  # ✅ Abstract 길이
             )
 
         # ✅ 방향성 있는 유사도 엣지 추가
@@ -258,6 +261,7 @@ class SemanticSimilarityGraphBuilder:
             node_data = G.nodes[node]
             paper_info[node] = {
                 "title": node_data.get("title", ""),
+                "abstract": node_data.get("abstract", ""),
                 "authors": ", ".join(node_data.get("authors", [])),
                 "year": node_data.get("year", ""),
                 "journal": node_data.get("journal", ""),
@@ -265,12 +269,15 @@ class SemanticSimilarityGraphBuilder:
                 "degree": G.degree(node),  # 연결된 논문 수
                 "has_pdf": node_data.get("has_pdf", False),
                 "has_abstract": node_data.get("has_abstract", False),
+                "abstract_length": node_data.get(
+                    "abstract_length", 0
+                ),  # ✅ Abstract 길이
             }
 
         return paper_info
 
     def save_similarity_graph_and_analysis(self, G, stats, output_dir):
-        """Similarity 그래프와 분석 결과 저장"""
+        """Similarity 그래프와 분석 결과 저장 (XML 호환성 개선)"""
         output_dir = Path(output_dir)
 
         # 1. NetworkX 그래프를 JSON으로 저장 (GraphRAG용)
@@ -303,10 +310,28 @@ class SemanticSimilarityGraphBuilder:
         with open(graph_file, "w", encoding="utf-8") as f:
             json.dump(graph_data, f, ensure_ascii=False, indent=2)
 
-        # 2. GraphML 파일로 저장
+        # 2. ✅ GraphML 파일로 저장 (XML 호환성 개선)
         try:
-            # GraphML 호환을 위해 그래프 복사 및 속성 변환
             G_graphml = G.copy()
+
+            # ✅ XML 호환 문자열 정제 함수
+            def clean_xml_string(text):
+                if not isinstance(text, str):
+                    text = str(text)
+
+                # NULL 바이트 및 제어 문자 제거
+                import re
+
+                text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
+
+                # XML 특수 문자 이스케이프
+                text = text.replace("&", "&amp;")
+                text = text.replace("<", "&lt;")
+                text = text.replace(">", "&gt;")
+                text = text.replace('"', "&quot;")
+                text = text.replace("'", "&apos;")
+
+                return text
 
             # 노드 속성을 GraphML 호환 형태로 변환
             for node in G_graphml.nodes():
@@ -314,44 +339,64 @@ class SemanticSimilarityGraphBuilder:
                 if "authors" in G_graphml.nodes[node]:
                     authors_list = G_graphml.nodes[node]["authors"]
                     if isinstance(authors_list, (list, set)):
-                        G_graphml.nodes[node]["authors"] = ";".join(
-                            str(a) for a in authors_list
-                        )
+                        cleaned_authors = [
+                            clean_xml_string(str(a)) for a in authors_list
+                        ]
+                        G_graphml.nodes[node]["authors"] = ";".join(cleaned_authors)
 
                 if "keywords" in G_graphml.nodes[node]:
                     keywords_list = G_graphml.nodes[node]["keywords"]
                     if isinstance(keywords_list, (list, set)):
-                        G_graphml.nodes[node]["keywords"] = ";".join(
-                            str(k) for k in keywords_list
+                        cleaned_keywords = [
+                            clean_xml_string(str(k)) for k in keywords_list
+                        ]
+                        G_graphml.nodes[node]["keywords"] = ";".join(cleaned_keywords)
+
+                # ✅ Abstract와 기타 문자열 필드들 정제
+                for attr_name, attr_value in G_graphml.nodes[node].items():
+                    if isinstance(attr_value, str):
+                        # Abstract, title 등 문자열 필드들 정제
+                        G_graphml.nodes[node][attr_name] = clean_xml_string(attr_value)
+                    elif isinstance(attr_value, (list, set, dict)):
+                        if isinstance(attr_value, dict):
+                            G_graphml.nodes[node][attr_name] = clean_xml_string(
+                                json.dumps(attr_value)
+                            )
+                        else:
+                            cleaned_list = [
+                                clean_xml_string(str(v)) for v in attr_value
+                            ]
+                            G_graphml.nodes[node][attr_name] = ";".join(cleaned_list)
+                    elif not isinstance(attr_value, (int, float, bool)):
+                        G_graphml.nodes[node][attr_name] = clean_xml_string(
+                            str(attr_value)
                         )
 
-                # 기타 복잡한 타입들을 문자열로 변환
-                for attr_name, attr_value in G_graphml.nodes[node].items():
-                    if isinstance(attr_value, (list, set, dict)):
-                        if isinstance(attr_value, dict):
-                            G_graphml.nodes[node][attr_name] = json.dumps(attr_value)
-                        else:
-                            G_graphml.nodes[node][attr_name] = ";".join(
-                                str(v) for v in attr_value
-                            )
-                    elif not isinstance(attr_value, (str, int, float, bool)):
-                        G_graphml.nodes[node][attr_name] = str(attr_value)
-
-            # 엣지 속성도 확인
+            # 엣지 속성도 정제
             for edge in G_graphml.edges():
                 for attr_name, attr_value in G_graphml.edges[edge].items():
-                    if isinstance(attr_value, (list, set, dict)):
+                    if isinstance(attr_value, str):
+                        G_graphml.edges[edge][attr_name] = clean_xml_string(attr_value)
+                    elif isinstance(attr_value, (list, set, dict)):
                         if isinstance(attr_value, dict):
-                            G_graphml.edges[edge][attr_name] = json.dumps(attr_value)
-                        else:
-                            G_graphml.edges[edge][attr_name] = ";".join(
-                                str(v) for v in attr_value
+                            G_graphml.edges[edge][attr_name] = clean_xml_string(
+                                json.dumps(attr_value)
                             )
-                    elif not isinstance(attr_value, (str, int, float, bool)):
-                        G_graphml.edges[edge][attr_name] = str(attr_value)
+                        else:
+                            cleaned_list = [
+                                clean_xml_string(str(v)) for v in attr_value
+                            ]
+                            G_graphml.edges[edge][attr_name] = ";".join(cleaned_list)
+                    elif not isinstance(attr_value, (int, float, bool)):
+                        G_graphml.edges[edge][attr_name] = clean_xml_string(
+                            str(attr_value)
+                        )
 
             graphml_file = output_dir / "semantic_similarity_network_graph.graphml"
-            nx.write_graphml(G_graphml, graphml_file)
+            nx.write_graphml(
+                G_graphml, graphml_file, encoding="utf-8", prettyprint=True
+            )
+            print(f"   🔗 Graph (GraphML): {graphml_file}")
 
         except Exception as e:
             print(f"⚠️  GraphML 저장 중 오류 발생: {e}")
@@ -381,6 +426,15 @@ class SemanticSimilarityGraphBuilder:
                     "target_title": G.nodes[edge[1]].get("title", ""),
                     "source_year": G.nodes[edge[0]].get("year", ""),
                     "target_year": G.nodes[edge[1]].get("year", ""),
+                    # ✅ Abstract 정보 추가
+                    "source_has_abstract": G.nodes[edge[0]].get("has_abstract", False),
+                    "target_has_abstract": G.nodes[edge[1]].get("has_abstract", False),
+                    "source_abstract_length": G.nodes[edge[0]].get(
+                        "abstract_length", 0
+                    ),
+                    "target_abstract_length": G.nodes[edge[1]].get(
+                        "abstract_length", 0
+                    ),
                 }
             )
             # numpy 타입 변환
@@ -395,8 +449,6 @@ class SemanticSimilarityGraphBuilder:
 
         print(f"💾 Semantic similarity graph results saved:")
         print(f"   🔗 Graph (JSON): {graph_file}")
-        if graphml_file:
-            print(f"   🔗 Graph (GraphML): {graphml_file}")
         print(f"   📊 Analysis: {stats_file}")
         print(f"   📄 Paper Info: {paper_info_file}")
         print(f"   📈 Edge List: {edge_file}")
