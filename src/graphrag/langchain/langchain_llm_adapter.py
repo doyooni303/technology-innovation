@@ -81,7 +81,7 @@ class LLMUsageStats:
 
 
 class GraphRAGLLMAdapter(LLM):
-    """GraphRAG LocalLLMManager를 LangChain LLM으로 변환하는 어댑터"""
+    """수정된 GraphRAG LLM Adapter - FieldInfo 오류 해결"""
 
     # LangChain Pydantic 필드들
     llm_manager: Any = Field(description="GraphRAG LocalLLMManager instance")
@@ -121,6 +121,9 @@ class GraphRAGLLMAdapter(LLM):
         if not _langchain_available:
             raise ImportError("LangChain is required for LLM adapter")
 
+        # ✅ Pydantic Field 값들을 안전하게 검증
+        self._validate_field_values()
+
         # 통계 초기화
         self._stats = LLMUsageStats()
         self._cache = {}
@@ -128,10 +131,49 @@ class GraphRAGLLMAdapter(LLM):
         self._is_loaded = False
 
         logger.info("✅ GraphRAGLLMAdapter initialized")
-        logger.info(f"   🌡️ Temperature: {self.temperature}")
-        logger.info(f"   📏 Max tokens: {self.max_tokens}")
-        logger.info(f"   🔧 Mode: {self.mode.value}")
+        logger.info(f"   🌡️ Temperature: {self._get_safe_temperature()}")
+        logger.info(f"   📏 Max tokens: {self._get_safe_max_tokens()}")
+        logger.info(
+            f"   🔧 Mode: {self.mode.value if hasattr(self.mode, 'value') else self.mode}"
+        )
         logger.info(f"   💾 Caching: {self.enable_caching}")
+
+    def _validate_field_values(self):
+        """Pydantic Field 값들을 검증하고 수정"""
+
+        # temperature 검증
+        if not isinstance(getattr(self, "temperature", None), (int, float)):
+            logger.warning("⚠️ Invalid temperature field, setting to 0.1")
+            object.__setattr__(self, "temperature", 0.1)
+
+        # max_tokens 검증
+        if not isinstance(getattr(self, "max_tokens", None), (int, float)):
+            logger.warning("⚠️ Invalid max_tokens field, setting to 1000")
+            object.__setattr__(self, "max_tokens", 1000)
+
+        # mode 검증
+        if not hasattr(getattr(self, "mode", None), "value"):
+            logger.warning("⚠️ Invalid mode field, setting to DIRECT")
+            from enum import Enum
+
+            if hasattr(self, "mode") and isinstance(self.mode, str):
+                # 문자열을 Enum으로 변환 시도
+                try:
+                    object.__setattr__(self, "mode", AdapterMode(self.mode))
+                except (ValueError, AttributeError):
+                    object.__setattr__(self, "mode", AdapterMode.DIRECT)
+            else:
+                object.__setattr__(self, "mode", AdapterMode.DIRECT)
+
+    def _get_safe_temperature(self) -> float:
+        """안전한 temperature 값 반환"""
+        temp = getattr(self, "temperature", 0.1)
+        return float(temp) if isinstance(temp, (int, float)) else 0.1
+
+    def _get_safe_max_tokens(self) -> int:
+        """안전한 max_tokens 값 반환"""
+        tokens = getattr(self, "max_tokens", 1000)
+        return int(tokens) if isinstance(tokens, (int, float)) else 1000
 
     @property
     def _llm_type(self) -> str:
@@ -140,12 +182,14 @@ class GraphRAGLLMAdapter(LLM):
 
     @property
     def _identifying_params(self) -> Mapping[str, Any]:
-        """LangChain이 사용하는 식별 파라미터"""
+        """LangChain이 사용하는 식별 파라미터 - 안전한 값 추출"""
         return {
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "mode": self.mode.value,
-            "model_path": getattr(self.llm_manager.config, "model_path", "unknown"),
+            "temperature": self._get_safe_temperature(),
+            "max_tokens": self._get_safe_max_tokens(),
+            "mode": self.mode.value if hasattr(self.mode, "value") else str(self.mode),
+            "model_path": getattr(
+                getattr(self.llm_manager, "config", None), "model_path", "unknown"
+            ),
         }
 
     def _ensure_loaded(self) -> None:
@@ -315,16 +359,31 @@ class GraphRAGLLMAdapter(LLM):
     def _prepare_generation_kwargs(
         self, stop: Optional[List[str]], **kwargs
     ) -> Dict[str, Any]:
-        """생성 파라미터 준비"""
+        """생성 파라미터 준비 - FieldInfo 오류 수정"""
+
+        # ✅ Pydantic Field 값을 안전하게 추출
+        max_tokens_value = getattr(self, "max_tokens", 1000)
+        temperature_value = getattr(self, "temperature", 0.1)
+
+        # FieldInfo 객체인 경우 기본값 사용
+        if not isinstance(max_tokens_value, (int, float)):
+            max_tokens_value = 1000
+            logger.warning("⚠️ max_tokens is not a numeric value, using default 1000")
+
+        if not isinstance(temperature_value, (int, float)):
+            temperature_value = 0.1
+            logger.warning("⚠️ temperature is not a numeric value, using default 0.1")
+
         generation_kwargs = {
-            "max_length": kwargs.get("max_tokens", self.max_tokens),
-            "temperature": kwargs.get("temperature", self.temperature),
+            "max_length": kwargs.get("max_tokens", max_tokens_value),
+            "temperature": kwargs.get("temperature", temperature_value),
         }
 
         # stop 토큰은 현재 LocalLLMManager에서 지원하지 않음
         if stop:
             logger.debug(f"⚠️ Stop tokens not supported: {stop}")
 
+        logger.debug(f"🔧 Generation kwargs: {generation_kwargs}")
         return generation_kwargs
 
     def _post_process_response(self, response: str) -> str:
@@ -492,19 +551,21 @@ class GraphRAGLLMAdapter(LLM):
                 logger.info(f"📝 Updated {key} = {value}")
 
     def get_model_info(self) -> Dict[str, Any]:
-        """모델 정보 반환"""
+        """모델 정보 반환 - 안전한 값 추출"""
         return {
             "adapter_type": self._llm_type,
-            "mode": self.mode.value,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "caching_enabled": self.enable_caching,
-            "is_loaded": self._is_loaded,
+            "mode": self.mode.value if hasattr(self.mode, "value") else str(self.mode),
+            "temperature": self._get_safe_temperature(),
+            "max_tokens": self._get_safe_max_tokens(),
+            "caching_enabled": getattr(self, "enable_caching", True),
+            "is_loaded": getattr(self, "_is_loaded", False),
             "llm_manager_loaded": (
                 self.llm_manager.is_loaded if self.llm_manager else False
             ),
             "model_path": (
-                getattr(self.llm_manager.config, "model_path", "unknown")
+                getattr(
+                    getattr(self.llm_manager, "config", None), "model_path", "unknown"
+                )
                 if self.llm_manager
                 else "unknown"
             ),
@@ -541,18 +602,20 @@ class GraphRAGLLMAdapter(LLM):
 
 
 def create_llm_adapter(
-    config_manager: GraphRAGConfigManager,
+    config_manager: "GraphRAGConfigManager",
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     mode: Union[AdapterMode, str] = AdapterMode.DIRECT,
     **kwargs,
 ) -> GraphRAGLLMAdapter:
-    """LLM 어댑터 팩토리 함수 (YAML 설정 호환)"""
+    """LLM 어댑터 팩토리 함수 (YAML 설정 호환) - 안전한 값 전달"""
 
     # LLM 설정 가져오기
     llm_config = config_manager.get_llm_config()
 
     # LocalLLMManager 생성
+    from ..graphrag_pipeline import LocalLLMManager
+
     llm_manager = LocalLLMManager(llm_config)
 
     # 모드 변환
@@ -563,11 +626,28 @@ def create_llm_adapter(
             logger.warning(f"⚠️ Unknown mode: {mode}, using DIRECT")
             mode = AdapterMode.DIRECT
 
+    # ✅ 안전한 값 추출 및 검증
+    safe_temperature = (
+        temperature if temperature is not None else llm_config.get("temperature", 0.1)
+    )
+    safe_max_tokens = (
+        max_tokens if max_tokens is not None else llm_config.get("max_new_tokens", 1000)
+    )
+
+    # 값 타입 검증
+    if not isinstance(safe_temperature, (int, float)):
+        safe_temperature = 0.1
+        logger.warning("⚠️ Invalid temperature in config, using 0.1")
+
+    if not isinstance(safe_max_tokens, (int, float)):
+        safe_max_tokens = 1000
+        logger.warning("⚠️ Invalid max_tokens in config, using 1000")
+
     # 어댑터 설정
     adapter_config = {
         "llm_manager": llm_manager,
-        "temperature": temperature or llm_config.get("temperature", 0.1),
-        "max_tokens": max_tokens or llm_config.get("max_new_tokens", 1000),
+        "temperature": float(safe_temperature),
+        "max_tokens": int(safe_max_tokens),
         "mode": mode,
         **kwargs,
     }
@@ -576,7 +656,8 @@ def create_llm_adapter(
 
     logger.info(f"✅ LLM adapter created from YAML config")
     logger.info(f"   Provider: {llm_config.get('provider')}")
-    logger.info(f"   Model: {llm_config.get('model_path', 'unknown')}")
+    logger.info(f"   Temperature: {safe_temperature}")
+    logger.info(f"   Max tokens: {safe_max_tokens}")
     logger.info(f"   Mode: {mode.value}")
 
     return adapter

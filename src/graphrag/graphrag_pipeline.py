@@ -391,9 +391,11 @@ class GraphRAGPipeline:
             )
 
             # 검증도 지연 import로
-            from .langchain.qa_chain_builder import validate_qa_chain_integration
+            from .langchain.qa_chain_builder import (
+                validate_qa_chain_integration as validate_func,
+            )
 
-            validation = validate_qa_chain_integration(self.config_manager)
+            validation = validate_func(self.config_manager)
 
             if validation.get("status") not in ["ready", "partial"]:
                 logger.warning("⚠️ QA Chain not ready for activation")
@@ -467,7 +469,23 @@ class GraphRAGPipeline:
                 "reason": "QA Chain components not imported",
             }
 
-        return validate_qa_chain_integration(self.config_manager)
+        try:
+            # ✅ 지연 import로 함수 가져오기
+            from .langchain.qa_chain_builder import (
+                validate_qa_chain_integration as validate_func,
+            )
+
+            return validate_func(self.config_manager)
+        except ImportError as e:
+            return {
+                "status": "import_error",
+                "reason": f"Failed to import validation function: {e}",
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "reason": f"Validation failed: {e}",
+            }
 
     def setup(self) -> None:
         """시스템 전체 초기화"""
@@ -516,9 +534,11 @@ class GraphRAGPipeline:
 
         try:
             # ✅ 지연 import로 순환 import 방지
-            from .langchain.qa_chain_builder import validate_qa_chain_integration
+            from .langchain.qa_chain_builder import (
+                validate_qa_chain_integration as validate_func,
+            )
 
-            validation = validate_qa_chain_integration(self.config_manager)
+            validation = validate_func(self.config_manager)
             status = validation.get("status", "unknown")
 
             if status == "ready":
@@ -1291,9 +1311,9 @@ def main():
 
                 # 6. 테스트 질문들
                 test_queries = [
-                    "배터리 SoC 예측에 사용된 머신러닝 기법들은?",
-                    "AI 및 머신러닝 기법이 적용된 주요 task는 무엇인가요?",
-                    "배터리 전극 공정에서 AI가 적용될 수 있는 부분은 무엇이 있을까요?",
+                    "What machine learning techniques are used for battery SoC prediction?",
+                    "What are the main tasks where AI and machine learning techniques are applied?"
+                    "What are the areas where AI can be applied in battery electrode processes?,",
                 ]
 
                 print(f"\n❓ Testing with QA CHAIN optimization...")

@@ -67,6 +67,82 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
+# 파일 상단에 유틸리티 함수들 추가
+def safe_extract_document_metadata(doc, key: str, default: str = "") -> str:
+    """Document 객체에서 안전하게 메타데이터 추출"""
+
+    try:
+        if hasattr(doc, "metadata") and doc.metadata:
+            # LangChain Document 객체
+            return doc.metadata.get(key, default)
+        elif isinstance(doc, dict):
+            # 딕셔너리 형태
+            if "metadata" in doc:
+                return doc["metadata"].get(key, default)
+            else:
+                return doc.get(key, default)
+        else:
+            # 기타 객체 - 속성으로 접근 시도
+            return str(getattr(doc, key, default))
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to extract {key} from document: {e}")
+        return default
+
+
+def safe_extract_document_content(doc) -> str:
+    """Document 객체에서 안전하게 내용 추출"""
+
+    try:
+        if hasattr(doc, "page_content"):
+            # LangChain Document 객체
+            return doc.page_content
+        elif isinstance(doc, dict):
+            # 딕셔너리 형태
+            return doc.get("page_content", doc.get("content", str(doc)))
+        else:
+            # 기타 객체
+            return str(doc)
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to extract content from document: {e}")
+        return str(doc)
+
+
+def process_source_documents(source_documents: List) -> List[Dict[str, Any]]:
+    """source_documents 리스트를 안전하게 처리"""
+
+    processed = []
+    for doc in source_documents:
+        try:
+            processed_doc = {
+                "content": safe_extract_document_content(doc),
+                "metadata": {},
+                "node_id": safe_extract_document_metadata(doc, "node_id"),
+                "source": safe_extract_document_metadata(doc, "source"),
+            }
+
+            # 전체 메타데이터도 추가
+            if hasattr(doc, "metadata") and doc.metadata:
+                processed_doc["metadata"] = doc.metadata
+            elif isinstance(doc, dict) and "metadata" in doc:
+                processed_doc["metadata"] = doc["metadata"]
+
+            processed.append(processed_doc)
+
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to process document: {e}")
+            processed.append(
+                {
+                    "content": str(doc),
+                    "metadata": {},
+                    "node_id": "",
+                    "source": "",
+                    "processing_error": str(e),
+                }
+            )
+
+    return processed
+
+
 class ChainType(Enum):
     """QA 체인 타입"""
 
@@ -270,51 +346,72 @@ class GraphRAGQAChain(Chain):
                 raise
 
     # 나머지 메서드들은 동일...
-    def _process_conversational_qa(
+    def _process_basic_qa(
         self, question: str, run_manager: Optional[CallbackManagerForChainRun]
     ) -> Dict[str, Any]:
-        """대화형 QA 처리"""
-
-        logger.debug("💬 Processing conversational QA")
-
-        if not self.conversation_chain:
-            # 폴백: 기본 QA로 처리
-            return self._process_basic_qa(question, run_manager)
-
-        try:
-            # 대화 히스토리를 고려한 처리
-            result = self.conversation_chain(
-                {
-                    "question": question,
-                    "chat_history": (
-                        self.memory.chat_memory.messages if self.memory else []
-                    ),
-                }
-            )
-
-            return {
-                "answer": result.get("answer", ""),
-                "source_documents": result.get("source_documents", []),
-                "chat_history": result.get("chat_history", []),
-            }
-
-        except Exception as e:
-            logger.warning(f"⚠️ Conversational QA failed: {e}, falling back to basic QA")
-            return self._process_basic_qa(question, run_manager)
-
-    def _process_graph_enhanced_qa(self, question: str, query_analysis, run_manager):
-        """GraphRAG 특화 QA 처리"""
+        """기본 QA 처리 - Document 객체 처리 수정"""
 
         try:
             if self.retrieval_chain:
-                # ✅ 신버전 LangChain 방식
+                # ✅ LangChain v0.2+ 방식
                 result = self.retrieval_chain.invoke({"input": question})
-            else:
-                # 직접 검색 방식은 그대로
-                docs = self.retriever.get_relevant_documents(question)
-                context = "\n\n".join([doc.page_content for doc in docs])
 
-                # ✅ 프롬프트 템플릿 변수 맞춤
+                # ✅ context 처리 수정 - Document 객체 안전 처리
+                context_docs = result.get("context", [])
+                processed_context = process_source_documents(context_docs)
+
+            else:
+                docs = self.retriever.get_relevant_documents(question)
+                context = "\n\n".join(
+                    [safe_extract_document_content(doc) for doc in docs[:5]]
+                )
+
+                # 프롬프트 변수 맞춤
+                prompt_inputs = {
+                    "context": context,
+                    "input": question,
+                }
+                formatted_prompt = self.prompt_template.format(**prompt_inputs)
+
+                # LLM 호출
+                answer = self.llm.invoke(formatted_prompt)
+                answer = answer if isinstance(answer, str) else str(answer)
+
+                # Document 객체 처리
+                processed_context = process_source_documents(docs)
+                result = {"answer": answer, "context": processed_context}
+
+            return {
+                "answer": result.get("answer", ""),
+                "source_documents": result.get("context", processed_context),
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Basic QA failed: {e}")
+            return {
+                "answer": f"죄송합니다. 질문 처리 중 문제가 발생했습니다: {str(e)}",
+                "source_documents": [],
+                "error": str(e),
+            }
+
+    def _process_graph_enhanced_qa(self, question: str, query_analysis, run_manager):
+        """GraphRAG 특화 QA 처리 - Document 객체 처리 수정"""
+
+        try:
+            if self.retrieval_chain:
+                result = self.retrieval_chain.invoke({"input": question})
+
+                # context 처리 수정
+                context_docs = result.get("context", [])
+                processed_context = process_source_documents(context_docs)
+
+            else:
+                docs = self.retriever.get_relevant_documents(question)
+                context = "\n\n".join(
+                    [safe_extract_document_content(doc) for doc in docs]
+                )
+
+                # 프롬프트 템플릿 변수 맞춤
                 if hasattr(self.prompt_template, "input_variables"):
                     if "question" in self.prompt_template.input_variables:
                         prompt_inputs = {"context": context, "question": question}
@@ -325,11 +422,13 @@ class GraphRAGQAChain(Chain):
 
                 formatted_prompt = self.prompt_template.format(**prompt_inputs)
                 answer = self.llm.invoke(formatted_prompt)
-                result = {"answer": str(answer), "context": docs}
+
+                processed_context = process_source_documents(docs)
+                result = {"answer": str(answer), "context": processed_context}
 
             return {
                 "answer": result.get("answer", ""),
-                "source_documents": result.get("context", []),
+                "source_documents": result.get("context", processed_context),
                 "query_analysis": query_analysis,
             }
 
@@ -337,43 +436,27 @@ class GraphRAGQAChain(Chain):
             logger.warning(f"⚠️ Graph-enhanced QA failed: {e}")
             return self._process_basic_qa(question, run_manager)
 
-    def _process_basic_qa(
-        self, question: str, run_manager: Optional[CallbackManagerForChainRun]
-    ) -> Dict[str, Any]:
-        """기본 QA 처리 - 변수명 수정"""
+    def _process_conversational_qa(self, question: str, run_manager):
+        """대화형 QA 처리 - Document 객체 처리 수정"""
 
         try:
-            if self.retrieval_chain:
-                # ✅ LangChain v0.2+ 방식
-                result = self.retrieval_chain.invoke({"input": question})
+            if self.conversation_chain:
+                result = self.conversation_chain({"question": question})
+
+                # source_documents 처리
+                source_docs = result.get("source_documents", [])
+                processed_docs = process_source_documents(source_docs)
+
+                return {
+                    "answer": result.get("answer", ""),
+                    "source_documents": processed_docs,
+                }
             else:
-                docs = self.retriever.get_relevant_documents(question)
-                context = "\n\n".join([doc.page_content for doc in docs[:5]])
-
-                # ✅ 프롬프트 변수 맞춤
-                prompt_inputs = {
-                    "context": context,
-                    "input": question,
-                }  # 'question' → 'input'
-                formatted_prompt = self.prompt_template.format(**prompt_inputs)
-
-                # LLM 호출
-                answer = self.llm.invoke(formatted_prompt)
-                answer = answer if isinstance(answer, str) else str(answer)
-
-                result = {"answer": answer, "context": docs}
-
-            return {
-                "answer": result.get("answer", ""),
-                "source_documents": result.get("context", []),
-            }
+                return self._process_basic_qa(question, run_manager)
 
         except Exception as e:
-            logger.error(f"❌ Basic QA failed: {e}")
-            return {
-                "answer": f"죄송합니다. 답변 생성 중 오류가 발생했습니다: {str(e)}",
-                "source_documents": [],
-            }
+            logger.warning(f"⚠️ Conversational QA failed: {e}, falling back to basic QA")
+            return self._process_basic_qa(question, run_manager)
 
     # 나머지 메서드들 (동일하게 유지)
     def _adapt_search_config(
@@ -983,6 +1066,23 @@ def replace_pipeline_llm_with_qa_chain(
                 # QAResult 형태로 변환
                 from ..graphrag_pipeline import QAResult
 
+                # ✅ Document 객체 처리 수정
+                source_nodes = []
+                source_documents = result.get("source_documents", [])
+
+                for doc in source_documents:
+                    try:
+                        if hasattr(doc, "metadata") and doc.metadata:
+                            node_id = doc.metadata.get("node_id", "")
+                            if not node_id:
+                                node_id = doc.metadata.get("source", "")
+                        else:
+                            node_id = ""
+                        source_nodes.append(node_id)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to extract node_id: {e}")
+                        source_nodes.append("")
+
                 return QAResult(
                     query=query,
                     answer=result.get("answer", ""),
@@ -993,10 +1093,7 @@ def replace_pipeline_llm_with_qa_chain(
                     confidence_score=result.get("query_analysis", {}).get(
                         "confidence", 0.0
                     ),
-                    source_nodes=[
-                        doc.get("metadata", {}).get("node_id", "")
-                        for doc in result.get("source_documents", [])
-                    ],
+                    source_nodes=source_nodes,  # ✅ 수정된 source_nodes
                 )
             else:
                 return result.get("answer", "")
