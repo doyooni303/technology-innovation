@@ -609,7 +609,8 @@ class ContextSerializer:
             year = paper_data.get("year", "")
             authors = paper_data.get("authors", [])
             journal = paper_data.get("journal", "")
-
+            abstract = paper_data.get("abstract", "")  # ✅ abstract 추가
+            keywords = paper_data.get("keywords", [])  # ✅ keywords 추가
             priority = node_priorities.get(paper_id, ContextPriority.LOW)
 
             if i < detailed_count:
@@ -626,6 +627,26 @@ class ContextSerializer:
                 if journal:
                     lines.append(f"- **Journal:** {journal}")
                 lines.append(f"- **Relevance:** {priority.value}")
+                            # ✅ Abstract 추가 (가장 중요한 정보)
+                if abstract:
+                    # Abstract를 적절한 길이로 자르기
+                    abstract_clean = abstract.replace('\n', ' ').strip()
+                    if len(abstract_clean) > 300:
+                        abstract_clean = abstract_clean[:300] + "..."
+                    lines.append(f"- **Abstract:** {abstract_clean}")
+                    
+                # ✅ Keywords 추가 (검색 관련성 향상)
+                if keywords:
+                    if isinstance(keywords, str):
+                        keyword_list = [kw.strip() for kw in keywords.split(";") if kw.strip()]
+                    elif isinstance(keywords, list):
+                        keyword_list = [str(kw).strip() for kw in keywords if str(kw).strip()]
+                    else:
+                        keyword_list = []
+                    
+                    if keyword_list:
+                        keyword_text = ", ".join(keyword_list[:8])  # 최대 8개
+                        lines.append(f"- **Keywords:** {keyword_text}")
             else:
                 # 간단 표시
                 summary = f"- {title}"

@@ -96,48 +96,204 @@ class UnifiedKnowledgeGraphBuilder:
             return None
 
     def standardize_node_attributes(
-        self, node_id: str, attributes: Dict[str, Any], source_graph: str
+        self, node_id: str, node_data: Dict[str, Any], source_graph: str
     ) -> Dict[str, Any]:
-        """노드 속성 표준화 및 보강"""
-        standardized = attributes.copy()
+        """노드 속성 표준화 - Abstract 포함 버전"""
+
+        standardized = node_data.copy()
 
         # 공통 속성 추가
         standardized["source_graphs"] = [source_graph]
         standardized["integration_timestamp"] = pd.Timestamp.now().isoformat()
 
-        # 노드 타입별 표준화
+        # node_type 표준화 (필수)
         if "node_type" not in standardized:
-            # 노드 타입 추론
-            if node_id.startswith("paper_"):
+            # 노드 ID나 source_graph로부터 추론
+            if "paper" in node_id.lower() or "paper" in source_graph:
                 standardized["node_type"] = "paper"
-            elif any(char.isalpha() and char.islower() for char in node_id):
-                if " " in node_id:
-                    standardized["node_type"] = "author"
-                else:
-                    standardized["node_type"] = "keyword"
-            else:
+            elif "author" in node_id.lower() or "author" in source_graph:
+                standardized["node_type"] = "author"
+            elif "keyword" in node_id.lower() or "keyword" in source_graph:
+                standardized["node_type"] = "keyword"
+            elif "journal" in node_id.lower() or "journal" in source_graph:
                 standardized["node_type"] = "journal"
+            else:
+                standardized["node_type"] = "unknown"
 
-        # 타입별 필수 속성 확인
-        node_type = standardized["node_type"]
+        # 노드 타입별 특별 처리
+        node_type = standardized.get("node_type", "unknown")
 
         if node_type == "paper":
-            required_attrs = ["title", "year", "authors"]
-            for attr in required_attrs:
-                if attr not in standardized:
-                    standardized[attr] = "Unknown"
+            # ✅ 논문 노드에 Abstract 관련 처리 추가
+
+            # 1. 기본 필드들 정리
+            essential_fields = ["title", "authors", "year", "journal", "keywords"]
+            for field in essential_fields:
+                if field not in standardized:
+                    standardized[field] = ""
+
+            # 2. ✅ Abstract 처리 (핵심 추가)
+            abstract_sources = [
+                "abstract",  # 직접적인 abstract 필드
+                "description",  # 일부 소스에서 사용
+                "summary",  # 요약 필드
+                "content",  # 일반적인 내용 필드
+            ]
+
+            abstract_content = ""
+            for field in abstract_sources:
+                if field in node_data and node_data[field]:
+                    content = str(node_data[field]).strip()
+                    if len(content) > len(abstract_content):
+                        abstract_content = content
+
+            standardized["abstract"] = abstract_content
+            standardized["has_abstract"] = bool(abstract_content)
+
+            # 3. ✅ Abstract 품질 분석
+            if abstract_content:
+                # Abstract 길이 분석
+                standardized["abstract_length"] = len(abstract_content)
+                standardized["abstract_word_count"] = len(abstract_content.split())
+
+                # Abstract 품질 점수 (길이 기반)
+                if len(abstract_content) > 100:
+                    standardized["abstract_quality"] = "good"
+                elif len(abstract_content) > 50:
+                    standardized["abstract_quality"] = "fair"
+                else:
+                    standardized["abstract_quality"] = "poor"
+            else:
+                standardized["abstract_length"] = 0
+                standardized["abstract_word_count"] = 0
+                standardized["abstract_quality"] = "none"
+
+            # 4. 키워드 처리 개선
+            keywords = standardized.get("keywords", "")
+            if isinstance(keywords, list):
+                keywords = "; ".join(str(k) for k in keywords)
+            elif not isinstance(keywords, str):
+                keywords = str(keywords)
+
+            # 키워드 정제
+            if keywords:
+                keyword_list = [kw.strip() for kw in keywords.split(";") if kw.strip()]
+                standardized["keywords"] = "; ".join(keyword_list)
+                standardized["keyword_count"] = len(keyword_list)
+            else:
+                standardized["keywords"] = ""
+                standardized["keyword_count"] = 0
+
+            # 5. 저자 처리 개선
+            authors = standardized.get("authors", [])
+            if isinstance(authors, str):
+                authors = [a.strip() for a in authors.split(",") if a.strip()]
+            elif not isinstance(authors, list):
+                authors = [str(authors)]
+
+            standardized["authors"] = authors
+            standardized["author_count"] = len(authors)
+
+            # 저자 관련 메타데이터
+            if len(authors) == 1:
+                standardized["collaboration_type"] = "Single Author"
+            elif len(authors) <= 3:
+                standardized["collaboration_type"] = "Small Team"
+            else:
+                standardized["collaboration_type"] = "Large Team"
+
+            # 6. 연도 정규화
+            year = standardized.get("year", "")
+            if year:
+                try:
+                    year_int = int(str(year))
+                    if 1900 <= year_int <= 2030:  # 합리적인 범위
+                        standardized["year"] = year_int
+                    else:
+                        standardized["year"] = None
+                except:
+                    standardized["year"] = None
+            else:
+                standardized["year"] = None
+
+            # 7. ✅ 논문 분류 및 특성 분석
+            title = standardized.get("title", "").lower()
+            abstract_lower = abstract_content.lower()
+
+            # ML/AI 관련 키워드 탐지
+            ml_keywords = [
+                "machine learning",
+                "deep learning",
+                "neural network",
+                "artificial intelligence",
+                "reinforcement learning",
+                "supervised learning",
+                "unsupervised learning",
+                "classification",
+                "regression",
+                "clustering",
+                "algorithm",
+            ]
+
+            battery_keywords = [
+                "battery",
+                "lithium",
+                "soc",
+                "state of charge",
+                "electric vehicle",
+                "energy storage",
+                "charging",
+                "power management",
+                "thermal management",
+            ]
+
+            ml_score = sum(
+                1 for kw in ml_keywords if kw in title or kw in abstract_lower
+            )
+            battery_score = sum(
+                1 for kw in battery_keywords if kw in title or kw in abstract_lower
+            )
+
+            standardized["ml_relevance_score"] = ml_score
+            standardized["battery_relevance_score"] = battery_score
+            standardized["is_interdisciplinary"] = ml_score > 0 and battery_score > 0
+
+            # 경험있는 저자 여부 (휴리스틱)
+            experienced_indicators = ["professor", "dr.", "phd", "senior", "lead"]
+            author_text = " ".join(authors).lower()
+            standardized["has_experienced_authors"] = any(
+                indicator in author_text for indicator in experienced_indicators
+            )
 
         elif node_type == "author":
-            if "name" not in standardized:
-                standardized["name"] = node_id
+            # 저자 노드 처리 (기존 유지)
+            essential_fields = ["name", "paper_count", "collaborator_count"]
+            for field in essential_fields:
+                if field not in standardized:
+                    if field == "name":
+                        standardized[field] = node_id
+                    else:
+                        standardized[field] = 0
 
         elif node_type == "keyword":
+            # 키워드 노드 처리 (기존 유지)
+            if "name" not in standardized:
+                standardized["name"] = node_id
             if "frequency" not in standardized:
                 standardized["frequency"] = 1
 
         elif node_type == "journal":
-            if "name" not in standardized:
-                standardized["name"] = node_id
+            # 저널 노드 처리 (기존 유지)
+            essential_fields = ["name", "paper_count"]
+            for field in essential_fields:
+                if field not in standardized:
+                    if field == "name":
+                        standardized[field] = node_id
+                    else:
+                        standardized[field] = 0
+
+        # ID 정규화
+        standardized["id"] = node_id
 
         return standardized
 
@@ -147,7 +303,8 @@ class UnifiedKnowledgeGraphBuilder:
         new_attributes: Dict[str, Any],
         existing_attributes: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """중복 노드의 속성 병합"""
+        """중복 노드 병합 - Abstract 고려 버전"""
+
         merged = existing_attributes.copy()
 
         # source_graphs 병합
@@ -159,14 +316,73 @@ class UnifiedKnowledgeGraphBuilder:
         node_type = merged.get("node_type", "unknown")
 
         if node_type == "paper":
-            # 논문 정보는 더 완전한 정보로 업데이트
-            for key in ["title", "authors", "keywords", "abstract"]:
-                if key in new_attributes and key in merged:
-                    # 더 긴/상세한 정보 선택
-                    if len(str(new_attributes[key])) > len(str(merged[key])):
-                        merged[key] = new_attributes[key]
-                elif key in new_attributes:
-                    merged[key] = new_attributes[key]
+            # ✅ 논문 정보 병합 - Abstract 우선 처리
+
+            # Abstract 병합 (더 긴 것 선택)
+            existing_abstract = merged.get("abstract", "")
+            new_abstract = new_attributes.get("abstract", "")
+
+            if len(new_abstract) > len(existing_abstract):
+                merged["abstract"] = new_abstract
+                merged["has_abstract"] = bool(new_abstract)
+                merged["abstract_length"] = len(new_abstract)
+                merged["abstract_word_count"] = len(new_abstract.split())
+
+                # Abstract 품질 재계산
+                if len(new_abstract) > 100:
+                    merged["abstract_quality"] = "good"
+                elif len(new_abstract) > 50:
+                    merged["abstract_quality"] = "fair"
+                else:
+                    merged["abstract_quality"] = "poor"
+
+            # 다른 텍스트 필드들도 더 완전한 정보로 업데이트
+            text_fields = ["title", "keywords"]
+            for field in text_fields:
+                if field in new_attributes and field in merged:
+                    if len(str(new_attributes[field])) > len(str(merged[field])):
+                        merged[field] = new_attributes[field]
+                elif field in new_attributes:
+                    merged[field] = new_attributes[field]
+
+            # 저자 정보 병합 (더 많은 저자 정보 선택)
+            if "authors" in new_attributes and "authors" in merged:
+                existing_authors = (
+                    merged["authors"] if isinstance(merged["authors"], list) else []
+                )
+                new_authors = (
+                    new_attributes["authors"]
+                    if isinstance(new_attributes["authors"], list)
+                    else []
+                )
+
+                if len(new_authors) > len(existing_authors):
+                    merged["authors"] = new_authors
+                    merged["author_count"] = len(new_authors)
+
+            # 수치형 필드들은 더 높은 값 선택
+            numeric_fields = [
+                "ml_relevance_score",
+                "battery_relevance_score",
+                "keyword_count",
+            ]
+            for field in numeric_fields:
+                if field in new_attributes and field in merged:
+                    merged[field] = max(
+                        merged.get(field, 0), new_attributes.get(field, 0)
+                    )
+                elif field in new_attributes:
+                    merged[field] = new_attributes[field]
+
+            # Boolean 필드들은 OR 연산
+            boolean_fields = ["is_interdisciplinary", "has_experienced_authors"]
+            for field in boolean_fields:
+                if field in new_attributes and field in merged:
+                    merged[field] = merged.get(field, False) or new_attributes.get(
+                        field, False
+                    )
+                elif field in new_attributes:
+                    merged[field] = new_attributes[field]
 
         elif node_type == "author":
             # 저자 통계 정보 병합 (최대값 선택)
@@ -469,6 +685,45 @@ class UnifiedKnowledgeGraphBuilder:
         for node in self.unified_graph.nodes():
             node_type = self.unified_graph.nodes[node].get("node_type", "unknown")
             node_types[node_type] += 1
+        # ✅ Abstract 관련 통계 추가
+        abstract_stats = {
+            "papers_with_abstract": 0,
+            "papers_without_abstract": 0,
+            "total_abstract_length": 0,
+            "average_abstract_length": 0,
+            "abstract_quality_distribution": {
+                "good": 0,
+                "fair": 0,
+                "poor": 0,
+                "none": 0,
+            },
+        }
+
+        paper_nodes = [
+            n
+            for n in self.unified_graph.nodes()
+            if self.unified_graph.nodes[n].get("node_type") == "paper"
+        ]
+
+        for paper_id in paper_nodes:
+            paper_data = self.unified_graph.nodes[paper_id]
+            has_abstract = paper_data.get("has_abstract", False)
+            abstract_length = paper_data.get("abstract_length", 0)
+            abstract_quality = paper_data.get("abstract_quality", "none")
+
+            if has_abstract:
+                abstract_stats["papers_with_abstract"] += 1
+                abstract_stats["total_abstract_length"] += abstract_length
+            else:
+                abstract_stats["papers_without_abstract"] += 1
+
+            abstract_stats["abstract_quality_distribution"][abstract_quality] += 1
+
+        if abstract_stats["papers_with_abstract"] > 0:
+            abstract_stats["average_abstract_length"] = (
+                abstract_stats["total_abstract_length"]
+                / abstract_stats["papers_with_abstract"]
+            )
 
         # 엣지 타입별 통계
         edge_types = defaultdict(int)
@@ -509,10 +764,21 @@ class UnifiedKnowledgeGraphBuilder:
             },
             "node_types": dict(node_types),
             "edge_types": dict(edge_types),
+            "abstract_statistics": abstract_stats,  # ✅ 새로 추가
             "source_contributions": dict(source_contributions),
             "integration_issues": self.integration_issues,
         }
-
+        # Abstract 통계 로깅
+        logger.info(f"📄 Abstract Statistics:")
+        logger.info(
+            f"   Papers with abstract: {abstract_stats['papers_with_abstract']}"
+        )
+        logger.info(
+            f"   Papers without abstract: {abstract_stats['papers_without_abstract']}"
+        )
+        logger.info(
+            f"   Average abstract length: {abstract_stats['average_abstract_length']:.1f} chars"
+        )
         return stats
 
     def save_unified_graph(

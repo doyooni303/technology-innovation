@@ -445,40 +445,18 @@ def get_model_info(
 def recommend_model(
     language: str = "mixed", quality: str = "balanced", use_case: str = "academic"
 ) -> Tuple[str, str]:
-    """사용 케이스에 따른 모델 추천
-
-    Args:
-        language: "korean", "english", "mixed"
-        quality: "fast", "balanced", "high"
-        use_case: "academic", "general", "dialog"
-
-    Returns:
-        (model_name, model_type) 튜플
-    """
-
     # 학술 논문 특화
     if use_case == "academic":
         if quality == "high":
-            return "allenai/specter2_base", "sentence-transformers"
+            return (
+                "paraphrase-multilingual-mpnet-base-v2",
+                "sentence-transformers",
+            )  # 안정적인 모델로 변경
         else:
-            return "allenai/specter", "sentence-transformers"
-
-    # 다국어 (한국어/영어 혼용)
-    if language in ["mixed", "korean"]:
-        if quality == "fast":
-            return "paraphrase-multilingual-MiniLM-L12-v2", "sentence-transformers"
-        else:
-            return "paraphrase-multilingual-mpnet-base-v2", "sentence-transformers"
-
-    # 영어 전용
-    if language == "english":
-        if quality == "fast":
-            return "all-MiniLM-L6-v2", "sentence-transformers"
-        else:
-            return "all-mpnet-base-v2", "sentence-transformers"
-
-    # 기본값
-    return "paraphrase-multilingual-mpnet-base-v2", "sentence-transformers"
+            return (
+                "paraphrase-multilingual-mpnet-base-v2",
+                "sentence-transformers",
+            )  # 기본값도 변경
 
 
 def create_embedding_model(
@@ -499,6 +477,7 @@ def create_embedding_model(
     # 자동 모델 선택
     if model_name == "auto":
         # 기본 추천 (학술 논문용 다국어 모델)
+
         model_name, model_type = recommend_model(
             language="mixed", quality="balanced", use_case="academic"
         )

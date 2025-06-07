@@ -357,9 +357,11 @@ class GraphRAGRetriever(BaseRetriever):
 
         if node_type == "paper":
             title = node_data.get("title", "Unknown Title")
+            abstract = node_data.get("abstract", "")  # ✅ abstract 가져오기
             abstract = node_data.get("abstract", "")
             authors = node_data.get("authors", [])
             year = node_data.get("year", "")
+            keywords = node_data.get("keywords", [])
 
             content = f"Paper: {title}"
             if year:
@@ -369,6 +371,24 @@ class GraphRAGRetriever(BaseRetriever):
                 content += f"\nAuthors: {', '.join(str(a) for a in author_list[:3])}"
             if abstract:
                 content += f"\nAbstract: {abstract[:300]}..."
+        # ✅ Abstract 추가 (가장 중요!)
+        if abstract:
+            abstract_clean = abstract.replace("\n", " ").strip()
+            if len(abstract_clean) > 200:
+                abstract_clean = abstract_clean[:200] + "..."
+            content += f"\nAbstract: {abstract_clean}"
+
+        # ✅ Keywords 추가
+        if keywords:
+            if isinstance(keywords, str):
+                keyword_list = [kw.strip() for kw in keywords.split(";")][:5]
+            elif isinstance(keywords, list):
+                keyword_list = [str(kw).strip() for kw in keywords[:5]]
+            else:
+                keyword_list = []
+
+            if keyword_list:
+                content += f"\nKeywords: {', '.join(keyword_list)}"
 
         elif node_type == "author":
             name = node_data.get("name", node_id)
@@ -524,9 +544,23 @@ def create_graphrag_retriever(
     unified_graph_path: str,
     vector_store_path: str,
     embedding_model: str = "auto",
+    config_manager: Optional[object] = None,  # 추가된 파라미터
     **kwargs,
 ) -> GraphRAGRetriever:
-    """GraphRAGRetriever 팩토리 함수"""
+    """GraphRAGRetriever 팩토리 함수 - Config Manager 지원"""
+
+    # embedding_model이 "auto"일 때 config_manager에서 가져오기
+    if embedding_model == "auto" and config_manager is not None:
+        try:
+            # YAML 설정에서 임베딩 모델 가져오기
+            embedding_config = config_manager.get_embeddings_config()
+            embedding_model = embedding_config["model_name"]
+            logger.info(f"🎯 Using embedding model from config: {embedding_model}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to get embedding model from config: {e}")
+            logger.info("🎯 Falling back to auto selection")
+            # auto 선택 로직 그대로 진행
+
     return GraphRAGRetriever(
         unified_graph_path=unified_graph_path,
         vector_store_path=vector_store_path,

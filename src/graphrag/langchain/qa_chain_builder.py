@@ -624,21 +624,45 @@ class QAChainBuilder:
     def _get_or_create_retriever(
         self, embedding_model: str, config: QAChainConfig
     ) -> BaseRetriever:
-        """리트리버 생성 또는 조회"""
+        """리트리버 생성 또는 조회 - YAML 설정 자동 사용"""
 
         if self._retriever is None:
             logger.info("📥 Creating GraphRAG retriever...")
 
+            # ✅ embedding_model이 "auto"가 아니더라도 config_manager가 있으면 YAML 설정 우선 사용
+            final_embedding_model = embedding_model
+            if self.config_manager is not None:
+                try:
+                    # YAML 설정에서 임베딩 모델 가져오기
+                    embedding_config = self.config_manager.get_embeddings_config()
+                    yaml_model = embedding_config["model_name"]
+
+                    if yaml_model and yaml_model != "auto":
+                        final_embedding_model = yaml_model
+                        logger.info(
+                            f"🎯 Using embedding model from YAML config: {final_embedding_model}"
+                        )
+                    else:
+                        logger.info(
+                            f"🎯 Using embedding model parameter: {final_embedding_model}"
+                        )
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to get embedding model from config: {e}")
+                    logger.info(
+                        f"🎯 Using embedding model parameter: {final_embedding_model}"
+                    )
+
             self._retriever = create_graphrag_retriever(
                 unified_graph_path=str(self.unified_graph_path),
                 vector_store_path=str(self.vector_store_path),
-                embedding_model=embedding_model,
+                embedding_model=final_embedding_model,
+                config_manager=self.config_manager,  # ✅ config_manager 전달
                 max_docs=config.max_docs_for_context,
                 min_relevance_score=config.min_relevance_score,
                 enable_caching=True,
             )
 
-            logger.info("✅ GraphRAG retriever created")
+            logger.info("✅ GraphRAG retriever created with YAML config support")
 
         return self._retriever
 
@@ -968,22 +992,33 @@ class QAChainBuilder:
 
 
 # 편의 함수들 - Pipeline 통합 지원
-def create_qa_chain(
-    unified_graph_path: str,
-    vector_store_path: str,
-    chain_type: Union[ChainType, str] = ChainType.GRAPH_ENHANCED_QA,
-    config_manager: Optional[object] = None,
-    **kwargs,
-) -> GraphRAGQAChain:
-    """QA 체인 생성 편의 함수 - YAML 설정 지원"""
+def create_qa_chain_from_pipeline(pipeline: "GraphRAGPipeline") -> GraphRAGQAChain:
+    """GraphRAG Pipeline으로부터 QA 체인 생성 (YAML 설정 우선)"""
+
+    if not hasattr(pipeline, "config_manager") or not pipeline.config_manager:
+        raise ValueError("Pipeline must have a valid config_manager")
+
+    config = pipeline.config_manager.config
 
     builder = QAChainBuilder(
-        unified_graph_path=unified_graph_path,
-        vector_store_path=vector_store_path,
-        config_manager=config_manager,
+        unified_graph_path=config.graph.unified_graph_path,
+        vector_store_path=config.graph.vector_store_path,
+        config_manager=pipeline.config_manager,
     )
 
-    return builder.create_chain(chain_type=chain_type, **kwargs)
+    # ✅ embedding_model="auto"로 설정하여 YAML 설정 우선 사용
+    qa_chain = builder.create_chain(
+        chain_type=ChainType.GRAPH_ENHANCED_QA,
+        embedding_model="auto",  # YAML 설정에서 가져올 것
+        config=QAChainConfig(
+            max_docs_for_context=10,
+            min_relevance_score=0.3,
+            enable_memory=True,
+        ),
+    )
+
+    logger.info("🔗 QA Chain created from GraphRAG Pipeline with YAML config")
+    return qa_chain
 
 
 def create_conversational_qa_chain(
