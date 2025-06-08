@@ -5,7 +5,7 @@
 # LLM 설정 - 서버 로컬 Llama 3.1 사용
 # ============================================================================
 llm:
-  provider: "huggingface_local"  # 로컬 HuggingFace 모델 사용
+  provider: "huggingface_api"  # 로컬 HuggingFace 모델 사용
   temperature: 0.1
 
   huggingface_local:
@@ -52,6 +52,8 @@ llm:
   huggingface_api:
     model_name: "microsoft/DialoGPT-large"
     api_key: "${HUGGINGFACE_API_KEY}"
+    temperature: 0.1
+    max_new_tokens: 200
 
 # ============================================================================
 # 임베딩 설정 - 저장 경로 분리

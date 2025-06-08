@@ -36,7 +36,7 @@ except ImportError:
 
 # GraphRAG imports
 try:
-    from ..graphrag_pipeline import LocalLLMManager
+    from ..graphrag_pipeline import LocalLLMManager, HuggingFaceAPIManager
     from ..config_manager import GraphRAGConfigManager
 except ImportError as e:
     warnings.warn(f"GraphRAG pipeline components not available: {e}")
@@ -277,42 +277,71 @@ class GraphRAGLLMAdapter(LLM):
             else:
                 raise
 
+    # def _call_direct(self, prompt: str, **kwargs) -> str:
+    #     """직접 LLM 호출 - 완전히 안전한 파라미터 처리"""
+    #     try:
+    #         # ✅ FieldInfo 객체 사용 완전 방지
+    #         safe_max_length = 500  # 고정값 사용
+
+    #         # kwargs에서 안전하게 추출
+    #         if "max_length" in kwargs and isinstance(
+    #             kwargs["max_length"], (int, float)
+    #         ):
+    #             safe_max_length = int(kwargs["max_length"])
+
+    #         logger.debug(f"🔧 Using safe max_length: {safe_max_length}")
+
+    #         # ✅ 프롬프트 전처리 추가
+    #         processed_prompt = self._enhance_prompt_quality(prompt)
+
+    #         # LocalLLMManager.generate() 호출 - 파라미터 최소화
+    #         response = self.llm_manager.generate(
+    #             prompt=processed_prompt, max_length=safe_max_length
+    #         )
+
+    #         if not isinstance(response, str):
+    #             logger.warning(f"⚠️ LLM returned non-string: {type(response)}")
+    #             response = str(response)
+
+    #         # ✅ 응답 품질 개선
+    #         enhanced_response = self._enhance_response_quality(response)
+    #         return enhanced_response
+
+    #     except Exception as e:
+    #         logger.error(f"❌ Direct LLM call failed: {e}")
+
+    #         # 구체적인 에러 처리
+    #         if "unexpected keyword argument" in str(e):
+    #             raise RuntimeError(f"파라미터 전달 오류 (FieldInfo 관련): {e}")
+    #         else:
+    #             raise
     def _call_direct(self, prompt: str, **kwargs) -> str:
-        """직접 LLM 호출 - 완전히 안전한 파라미터 처리"""
+        """직접 LLM 호출 - HF API 최적화 버전"""
         try:
-            # ✅ FieldInfo 객체 사용 완전 방지
-            safe_max_length = 500  # 고정값 사용
+            # ✅ 통합 매니저 사용
+            safe_max_length = kwargs.get("max_length", 500)
 
-            # kwargs에서 안전하게 추출
-            if "max_length" in kwargs and isinstance(
-                kwargs["max_length"], (int, float)
-            ):
-                safe_max_length = int(kwargs["max_length"])
+            # 프롬프트 품질 개선
+            if isinstance(self.llm_manager, HuggingFaceAPIManager):
+                # API는 자체적으로 프롬프트 개선을 처리
+                response = self.llm_manager.generate(
+                    prompt=prompt, max_length=safe_max_length
+                )
+            else:
+                # 로컬 모델용 프롬프트 개선
+                enhanced_prompt = self._enhance_prompt_for_local(prompt)
+                response = self.llm_manager.generate(
+                    prompt=enhanced_prompt, max_length=safe_max_length
+                )
 
-            logger.debug(f"🔧 Using safe max_length: {safe_max_length}")
-
-            # ✅ 프롬프트 전처리 추가
-            processed_prompt = self._enhance_prompt_quality(prompt)
-
-            # LocalLLMManager.generate() 호출 - 파라미터 최소화
-            response = self.llm_manager.generate(
-                prompt=processed_prompt, max_length=safe_max_length
-            )
-
-            if not isinstance(response, str):
-                logger.warning(f"⚠️ LLM returned non-string: {type(response)}")
-                response = str(response)
-
-            # ✅ 응답 품질 개선
-            enhanced_response = self._enhance_response_quality(response)
-            return enhanced_response
+            return response
 
         except Exception as e:
-            logger.error(f"❌ Direct LLM call failed: {e}")
+            logger.error(f"❌ LLM call failed: {e}")
 
-            # 구체적인 에러 처리
-            if "unexpected keyword argument" in str(e):
-                raise RuntimeError(f"파라미터 전달 오류 (FieldInfo 관련): {e}")
+            # API 관련 에러 처리
+            if "api" in str(e).lower():
+                raise RuntimeError(f"API 호출 실패: {e}")
             else:
                 raise
 

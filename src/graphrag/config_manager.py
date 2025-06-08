@@ -77,7 +77,7 @@ class HuggingFaceAPIConfig:
     """HuggingFace API 설정"""
 
     model_name: str = "microsoft/DialoGPT-large"
-    api_key: str = "${HUGGINGFACE_API_KEY}"
+    api_key: str = os.getenv("HUGGINGFACE_API_KEY", "${HUGGINGFACE_API_KEY}")
 
 
 @dataclass
@@ -822,7 +822,20 @@ class GraphRAGConfigManager:
         }
 
         # 프로바이더별 설정 추가
-        if self.config.llm.provider == "huggingface_local":
+        if self.config.llm.provider == "huggingface_api":
+            llm_config.update(
+                {
+                    "model_name": getattr(
+                        self.config.llm,
+                        "model_name",
+                        "meta-llama/Meta-Llama-3.1-8B-Instruct",
+                    ),
+                    "api_key": os.getenv("HUGGINGFACE_API_KEY"),
+                    "timeout": getattr(self.config.llm, "timeout", 30),
+                    "top_p": getattr(self.config.llm, "top_p", 0.9),
+                }
+            )
+        elif self.config.llm.provider == "huggingface_local":
             hf_config = asdict(self.config.llm.huggingface_local)
             llm_config.update(hf_config)
         elif self.config.llm.provider == "openai":

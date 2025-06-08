@@ -45,6 +45,7 @@ try:
         GenerationConfig,
         BitsAndBytesConfig,
     )
+    from huggingface_hub import InferenceClient
 
     _transformers_available = True
 except ImportError:
@@ -52,19 +53,6 @@ except ImportError:
     warnings.warn("Transformers not available. Local LLM will not work.")
 # 로깅 설정
 logger = logging.getLogger(__name__)
-
-# try:
-#     from .langchain.qa_chain_builder import (
-#         create_qa_chain_from_pipeline,
-#         replace_pipeline_llm_with_qa_chain,
-#         validate_qa_chain_integration,
-#     )
-
-#     _qa_chain_available = True
-#     logger.info("✅ QA Chain integration available")
-# except ImportError as e:
-#     _qa_chain_available = False
-#     logger.warning(f"⚠️ QA Chain not available: {e}")
 
 # ✅ 전역 변수는 유지
 try:
@@ -140,6 +128,118 @@ class QAResult:
                 else "unknown"
             ),
         }
+
+
+class HuggingFaceAPIManager:
+    """Hugging Face API를 사용한 LLM 관리자"""
+
+    def __init__(self, config: Dict[str, Any]):
+        """
+        Args:
+            config: HF API 설정 (model_name, api_key, temperature 등)
+        """
+        self.config = config
+        self.model_name = config.get(
+            "model_name", "meta-llama/Meta-Llama-3.1-8B-Instruct"
+        )
+        self.api_key = config.get("api_key") or os.getenv("HUGGINGFACE_API_KEY")
+        self.temperature = config.get("temperature", 0.1)
+        self.max_tokens = config.get("max_new_tokens", 1000)
+
+        if not self.api_key:
+            raise ValueError("Hugging Face API key is required")
+
+        # InferenceClient 초기화
+        self.client = InferenceClient(model=self.model_name, token=self.api_key)
+
+        self.is_loaded = True  # API는 항상 로드 상태
+        logger.info(f"✅ HuggingFace API client initialized: {self.model_name}")
+
+    def generate(self, prompt: str, max_length: int = None, **kwargs) -> str:
+        """텍스트 생성 - API 버전 (영어 프롬프트)"""
+
+        try:
+            # 파라미터 준비
+            actual_max_tokens = max_length or self.max_tokens
+            actual_temperature = kwargs.get("temperature", self.temperature)
+
+            # ✅ 영어 프롬프트로 수정 - 더 나은 LLM 이해도
+            if not prompt.strip().startswith("Please provide"):
+                enhanced_prompt = f"""Please provide an accurate and useful answer to the following question in Korean. 
+    Explain technical content in an easy-to-understand manner and include specific examples.
+
+    Question: {prompt}
+
+    Answer:"""
+            else:
+                enhanced_prompt = prompt
+
+            # 메시지 구성
+            messages = [{"role": "user", "content": enhanced_prompt}]
+
+            logger.debug(
+                f"🔍 HF API call: model={self.model_name}, max_tokens={actual_max_tokens}, temp={actual_temperature}"
+            )
+
+            # API 호출
+            response = self.client.chat_completion(
+                messages=messages,
+                max_tokens=actual_max_tokens,
+                temperature=actual_temperature,
+                top_p=kwargs.get("top_p", 0.9),
+            )
+
+            # 응답 추출
+            if hasattr(response, "choices") and response.choices:
+                generated_text = response.choices[0].message.content.strip()
+            else:
+                generated_text = str(response).strip()
+
+            # 응답 후처리
+            cleaned_response = self._clean_response(generated_text)
+
+            logger.info(f"✅ HF API generated {len(cleaned_response)} characters")
+            return cleaned_response
+
+        except Exception as e:
+            logger.error(f"❌ HuggingFace API call failed: {e}")
+
+            # 구체적인 에러 처리
+            if "rate limit" in str(e).lower():
+                return "죄송합니다. API 호출 한도에 도달했습니다. 잠시 후 다시 시도해주세요."
+            elif "unauthorized" in str(e).lower():
+                return "죄송합니다. API 인증에 문제가 있습니다. API 키를 확인해주세요."
+            else:
+                return f"죄송합니다. API 호출 중 오류가 발생했습니다: {str(e)[:100]}"
+
+    def _clean_response(self, response: str) -> str:
+        """응답 정리"""
+
+        if not response:
+            return "죄송합니다. 응답을 생성할 수 없었습니다."
+
+        # 기본 정리
+        response = response.strip()
+
+        # 반복 패턴 제거
+        import re
+
+        response = re.sub(r"(.)\1{5,}", r"\1", response)
+        response = re.sub(r"\b(\w+)(\s+\1){2,}\b", r"\1", response)
+
+        # 길이 제한
+        if len(response) > 2000:
+            response = response[:2000] + "..."
+
+        return response
+
+    def load_model(self) -> None:
+        """API는 로드가 필요없음"""
+        pass
+
+    def unload_model(self) -> None:
+        """API는 언로드가 필요없음"""
+        pass
 
 
 class LocalLLMManager:
@@ -496,7 +596,22 @@ class GraphRAGPipeline:
 
         try:
             # 1. 설정 관리자 초기화
-            self._setup_config_manager()
+            # self._setup_config_manager()
+            self.config_manager = GraphRAGConfigManager(
+                config_file=self.config_file, env_file=self.env_file, auto_load=True
+            )
+            llm_config = self.config_manager.get_llm_config()
+
+            if llm_config.get("provider") == "huggingface_local":
+                from .graphrag_pipeline import (
+                    LocalLLMManager,
+                )  # 또는 적절한 import 경로
+
+                self.llm_manager = LocalLLMManager(llm_config)
+            else:
+                # API 기반은 quick_ask에서 처리하므로 None으로 설정
+                self.llm_manager = None
+                logger.info("⚠️ LLM manager skipped - using quick_ask for API calls")
 
             # 2. 쿼리 분석기 초기화
             self._setup_query_analyzer()
@@ -507,13 +622,13 @@ class GraphRAGPipeline:
             # 4. 컨텍스트 직렬화기 초기화
             self._setup_context_serializer()
 
-            # 5. LLM 관리자 초기화 (지연 로딩)
-            self._setup_llm_manager()
+            # 5. QA Chain 최적화 확인 (새로 추가)
+            try:
+                self._check_qa_chain_availability()
+            except ImportError as e:
+                logger.warning(f"⚠️ QA Chain not available: {e}")
 
-            # 6. QA Chain 최적화 확인 (새로 추가)
-            self._check_qa_chain_availability()
-
-            # 7. 시스템 상태 업데이트 (기존 #6을 #7로 변경)
+            # 6. 시스템 상태 업데이트 (기존 #6을 #7로 변경)
             self.state.initialization_time = time.time() - start_time
             self.state.status = PipelineStatus.READY
             self.state.last_error = None
@@ -1251,6 +1366,290 @@ class GraphRAGPipeline:
         logger.info("✅ Pipeline shutdown completed")
 
 
+def quick_ask_with_retriever(
+    query: str, use_context: bool = True, max_docs: int = 10
+) -> Dict[str, Any]:
+    """
+    안정적인 GraphRAG retriever + HuggingFace API 조합
+    pipeline 의존성 없이 독립적으로 작동
+    """
+    start_time = time.time()
+
+    try:
+        # HF API 클라이언트 초기화
+        api_key = os.getenv("HUGGINGFACE_API_KEY")
+        if not api_key:
+            raise ValueError("HUGGINGFACE_API_KEY 환경변수가 설정되지 않았습니다.")
+
+        client = InferenceClient(
+            model="meta-llama/Meta-Llama-3.1-8B-Instruct", token=api_key
+        )
+
+        context = ""
+        context_retrieval_time = 0
+        source_nodes = []
+        retrieval_success = False
+
+        # ✅ GraphRAG context retrieval (debug_retrieval_process 방식 사용)
+        if use_context:
+            try:
+                context_start = time.time()
+                logger.info("🔍 Retrieving context using GraphRAG retriever...")
+
+                from src.graphrag.langchain.custom_retriever import (
+                    create_graphrag_retriever,
+                )
+
+                # Retriever 생성 (debug_retrieval_process와 동일한 설정)
+                retriever = create_graphrag_retriever(
+                    unified_graph_path="data/processed/graphs/unified/unified_knowledge_graph.json",
+                    vector_store_path="data/processed/vector_store",
+                    embedding_model="auto",
+                    max_docs=max_docs,
+                    min_relevance_score=0.1,
+                    enable_caching=False,
+                )
+
+                logger.debug("✅ GraphRAG retriever created successfully")
+
+                # 검색 실행
+                documents = retriever.get_relevant_documents(query)
+                logger.debug(f"📋 Retrieved {len(documents)} documents")
+
+                if documents:
+                    # 컨텍스트 조합
+                    context_parts = []
+                    total_nodes = 0
+                    confidence_scores = []
+
+                    for doc in documents:
+                        context_parts.append(doc.page_content)
+
+                        # 메타데이터에서 정보 추출
+                        if hasattr(doc, "metadata"):
+                            total_nodes += doc.metadata.get("total_nodes", 0)
+                            confidence_scores.append(
+                                doc.metadata.get("confidence_score", 0.0)
+                            )
+
+                    context = "\n\n".join(context_parts)[:4000]  # 길이 제한
+                    source_nodes = [f"GraphRAG_Doc_{i}" for i in range(len(documents))]
+
+                    avg_confidence = (
+                        sum(confidence_scores) / len(confidence_scores)
+                        if confidence_scores
+                        else 0.0
+                    )
+
+                    retrieval_success = True
+                    logger.info(f"✅ Context retrieval successful:")
+                    logger.info(f"   Documents: {len(documents)}")
+                    logger.info(f"   Total nodes: {total_nodes}")
+                    logger.info(f"   Average confidence: {avg_confidence:.3f}")
+                    logger.info(f"   Context length: {len(context)} chars")
+
+                else:
+                    logger.warning("⚠️ No documents retrieved from GraphRAG")
+                    context = ""
+
+                context_retrieval_time = time.time() - context_start
+                logger.info(
+                    f"✅ Context retrieval completed in {context_retrieval_time:.2f}s"
+                )
+
+            except Exception as e:
+                context_retrieval_time = (
+                    time.time() - context_start if "context_start" in locals() else 0
+                )
+                logger.warning(f"⚠️ Context retrieval failed: {e}")
+                logger.info("🔄 Proceeding without GraphRAG context")
+                context = ""
+                source_nodes = []
+                retrieval_success = False
+
+        # ✅ HuggingFace API로 답변 생성
+        api_start = time.time()
+        logger.info("🤖 Generating answer with HuggingFace API...")
+
+        if context:
+            enhanced_prompt = f"""Please answer the following question in Korean based on the provided context. 
+Provide a comprehensive and technical answer that is easy to understand.
+
+Context: {context}
+
+Question: {query}
+
+Please provide your answer in Korean:"""
+            logger.info("🔍 Using GraphRAG context for enhanced answer")
+        else:
+            enhanced_prompt = f"""Please provide an accurate and useful answer to the following question in Korean. 
+Explain technical content in an easy-to-understand manner and include specific examples.
+
+Question: {query}
+
+Answer:"""
+            logger.info("🔍 Using standalone mode (no GraphRAG context)")
+
+        logger.debug(f"🔍 Prompt length: {len(enhanced_prompt)} characters")
+
+        # API 호출
+        response = client.chat_completion(
+            messages=[{"role": "user", "content": enhanced_prompt}],
+            max_tokens=800,
+            temperature=0.1,
+        )
+
+        answer = response.choices[0].message.content.strip()
+        api_time = time.time() - api_start
+        total_time = time.time() - start_time
+
+        logger.info(f"✅ HuggingFace API response in {api_time:.2f}s")
+        logger.info(f"📝 Generated answer: {len(answer)} characters")
+
+        # ✅ 결과 객체 생성
+        try:
+            from src.graphrag.graphrag_pipeline import QAResult
+
+            qa_result = QAResult(
+                query=query,
+                answer=answer,
+                subgraph_result=None,
+                serialized_context=None,
+                query_analysis=None,
+                processing_time=total_time,
+                confidence_score=0.9 if retrieval_success else 0.75,
+                source_nodes=source_nodes or ["HuggingFace_API_Only"],
+            )
+        except ImportError:
+
+            class SimpleResult:
+                def __init__(
+                    self, query, answer, processing_time, confidence_score, source_nodes
+                ):
+                    self.query = query
+                    self.answer = answer
+                    self.processing_time = processing_time
+                    self.confidence_score = confidence_score
+                    self.source_nodes = source_nodes
+
+            qa_result = SimpleResult(
+                query,
+                answer,
+                total_time,
+                0.9 if retrieval_success else 0.75,
+                source_nodes or ["HuggingFace_API_Only"],
+            )
+
+        return {
+            "result": qa_result,
+            "answer": answer,
+            "response_time": total_time,
+            "api_time": api_time,
+            "context_time": context_retrieval_time,
+            "context_used": len(context) > 0,
+            "context_length": len(context),
+            "source_nodes": source_nodes,
+            "confidence_score": 0.9 if retrieval_success else 0.75,
+            "retrieval_success": retrieval_success,
+            "documents_found": len(source_nodes),
+            "success": True,
+        }
+
+    except Exception as e:
+        logger.error(f"❌ quick_ask_with_retriever failed: {e}")
+
+        # 상세한 에러 분류
+        if "HUGGINGFACE_API_KEY" in str(e):
+            error_msg = "환경변수 HUGGINGFACE_API_KEY가 설정되지 않았습니다."
+        elif "unauthorized" in str(e).lower() or "api" in str(e).lower():
+            error_msg = "HuggingFace API 인증 오류입니다."
+        elif "rate limit" in str(e).lower():
+            error_msg = "API 호출 한도를 초과했습니다."
+        elif "network" in str(e).lower() or "connection" in str(e).lower():
+            error_msg = "네트워크 연결 오류입니다."
+        else:
+            error_msg = f"알 수 없는 오류가 발생했습니다: {str(e)[:100]}"
+
+        return {
+            "answer": f"죄송합니다. {error_msg}",
+            "response_time": time.time() - start_time,
+            "success": False,
+            "error": str(e),
+            "context_used": False,
+            "retrieval_success": False,
+        }
+
+
+def check_retriever_status() -> Dict[str, Any]:
+    """GraphRAG retriever 상태 확인"""
+
+    status = {
+        "unified_graph_exists": False,
+        "vector_store_exists": False,
+        "retriever_ready": False,
+        "api_key_set": False,
+        "errors": [],
+    }
+
+    try:
+        # 파일 존재 확인
+        import os
+        from pathlib import Path
+
+        unified_graph_path = Path(
+            "data/processed/graphs/unified/unified_knowledge_graph.json"
+        )
+        vector_store_path = Path("data/processed/vector_store")
+
+        status["unified_graph_exists"] = unified_graph_path.exists()
+        status["vector_store_exists"] = vector_store_path.exists()
+
+        if not status["unified_graph_exists"]:
+            status["errors"].append(f"Unified graph not found: {unified_graph_path}")
+
+        if not status["vector_store_exists"]:
+            status["errors"].append(f"Vector store not found: {vector_store_path}")
+
+        # API 키 확인
+        status["api_key_set"] = bool(os.getenv("HUGGINGFACE_API_KEY"))
+        if not status["api_key_set"]:
+            status["errors"].append("HUGGINGFACE_API_KEY environment variable not set")
+
+        # retriever 생성 테스트
+        if status["unified_graph_exists"] and status["vector_store_exists"]:
+            try:
+                from src.graphrag.langchain.custom_retriever import (
+                    create_graphrag_retriever,
+                )
+
+                test_retriever = create_graphrag_retriever(
+                    unified_graph_path=str(unified_graph_path),
+                    vector_store_path=str(vector_store_path),
+                    embedding_model="auto",
+                    max_docs=1,
+                    min_relevance_score=0.1,
+                    enable_caching=False,
+                )
+
+                status["retriever_ready"] = True
+
+            except Exception as e:
+                status["errors"].append(f"Retriever creation failed: {e}")
+
+        # 전체 상태 판정
+        status["overall_ready"] = (
+            status["unified_graph_exists"]
+            and status["vector_store_exists"]
+            and status["api_key_set"]
+            and status["retriever_ready"]
+        )
+
+    except Exception as e:
+        status["errors"].append(f"Status check failed: {e}")
+
+    return status
+
+
 def create_graphrag_pipeline(
     config_file: str = "graphrag_config.yaml",
     auto_setup: bool = True,
@@ -1266,165 +1665,431 @@ def create_graphrag_pipeline(
 
 
 def main():
-    """GraphRAG Pipeline 테스트 - QA Chain 최적화 전용"""
-    print("🧪 Testing GraphRAG Pipeline with QA Chain optimization...")
+    """개선된 GraphRAG Pipeline 테스트 - retriever 기반"""
+    print("🧪 Testing GraphRAG Pipeline with improved quick_ask (retriever-based)...")
+    print("=" * 80)
+    # 1. 파이프라인 초기화
+    pipeline = GraphRAGPipeline(config_file="graphrag_config.yaml", auto_setup=True)
+
+    # 2. 시스템 상태 확인
+    status = pipeline.get_system_status()
+    print(f"📊 System Status:")
+    print(f"   Pipeline: {status['pipeline_state']['status']}")
+
+    # 3. 임베딩 구축 (필요한 경우)
+    if not status["embeddings_loaded"]:
+        print(f"\n🏗️ Building embeddings...")
+        build_result = pipeline.build_embeddings()
+        print(f"✅ Built {build_result['total_embeddings']} embeddings")
 
     try:
-        # 1. 파이프라인 초기화
-        pipeline = GraphRAGPipeline(config_file="graphrag_config.yaml", auto_setup=True)
+        # 1. 시스템 상태 사전 확인
+        print("📊 Checking system status...")
+        retriever_status = check_retriever_status()
 
-        # 2. 시스템 상태 확인
-        status = pipeline.get_system_status()
-        print(f"📊 System Status:")
-        print(f"   Pipeline: {status['pipeline_state']['status']}")
-
-        # QA Chain 상태 확인
-        if "qa_chain" in status:
-            qa_status = status["qa_chain"]
-            print(f"   QA Chain Available: {qa_status['available']}")
-            print(f"   QA Chain Ready: {qa_status['ready']}")
-            print(f"   QA Chain Enabled: {qa_status['enabled']}")
-
-        # 3. 임베딩 구축 (필요한 경우)
-        if not status["embeddings_loaded"]:
-            print(f"\n🏗️ Building embeddings...")
-            build_result = pipeline.build_embeddings()
-            print(f"✅ Built {build_result['total_embeddings']} embeddings")
-
-        # 4. QA Chain 준비 상태 검증
-        print(f"\n🔍 Validating QA Chain integration...")
-        validation = pipeline.validate_qa_chain_integration()
-        print(f"   Status: {validation.get('status', 'unknown')}")
-
-        if validation.get("recommendations"):
-            print(f"   Recommendations:")
-            for rec in validation["recommendations"][:3]:
-                print(f"      • {rec}")
-
-        # 5. QA Chain 활성화 (바로 시작)
-        if validation.get("status") == "ready":
-            print(f"\n🚀 Activating QA Chain optimization...")
-
-            try:
-                pipeline.enable_qa_chain_optimization()
-                print(f"✅ QA Chain optimization activated!")
-
-                # 6. 테스트 질문들
-                test_queries = [
-                    "What machine learning techniques are used for battery SoC prediction?",
-                    "What are the main tasks where AI and machine learning techniques are applied?"
-                    "What are the areas where AI can be applied in battery electrode processes?,",
-                ]
-
-                print(f"\n❓ Testing with QA CHAIN optimization...")
-
-                for i, query in enumerate(test_queries[:2]):  # 2개 질문 테스트
-                    print(f"\n{i+1}. {query}")
-
-                    start_time = time.time()
-                    result = pipeline.ask(query, return_context=True)
-                    response_time = time.time() - start_time
-
-                    print(f"✅ Answer: {result.answer[:300]}...")
-                    print(f"📊 Response time: {response_time:.2f}s")
-                    print(f"📊 Confidence: {result.confidence_score:.3f}")
-                    print(f"📄 Sources: {len(result.source_nodes)} nodes")
-
-                    # 첫 번째 질문 후 캐시 효과 확인
-                    if i == 0:
-                        print(f"\n🔄 Testing cache effect - same question again...")
-                        cache_start = time.time()
-                        cache_result = pipeline.ask(query, return_context=True)
-                        cache_time = time.time() - cache_start
-
-                        speedup = (
-                            response_time / cache_time
-                            if cache_time > 0
-                            else float("inf")
-                        )
-                        print(f"📊 Cache response time: {cache_time:.2f}s")
-                        print(f"🚀 Speedup: {speedup:.1f}x faster")
-
-                # 7. QA Chain 통계
-                qa_stats = pipeline.get_qa_chain_stats()
-                if qa_stats:
-                    print(f"\n📊 QA Chain Statistics:")
-                    print(f"   Total calls: {qa_stats.get('total_calls', 0)}")
-                    print(f"   Cache hits: {qa_stats.get('cache_hits', 0)}")
-                    print(
-                        f"   Cache hit ratio: {qa_stats.get('cache_hit_ratio', 0):.2%}"
-                    )
-                    print(
-                        f"   Average response time: {qa_stats.get('average_time', 0):.2f}s"
-                    )
-                    print(f"   Success rate: {qa_stats.get('success_rate', 0):.2%}")
-                    print(f"   Failed calls: {qa_stats.get('failed_calls', 0)}")
-
-                # 8. LLM 어댑터 상태 확인
-                if hasattr(pipeline, "_qa_chain") and pipeline._qa_chain:
-                    try:
-                        llm_info = pipeline._qa_chain._llm.get_model_info()
-                        print(f"\n🤖 LLM Adapter Info:")
-                        print(f"   Model path: {llm_info.get('model_path', 'unknown')}")
-                        print(f"   Adapter mode: {llm_info.get('mode', 'unknown')}")
-                        print(
-                            f"   Temperature: {llm_info.get('temperature', 'unknown')}"
-                        )
-                        print(f"   Max tokens: {llm_info.get('max_tokens', 'unknown')}")
-                        print(
-                            f"   Caching enabled: {llm_info.get('caching_enabled', 'unknown')}"
-                        )
-                    except Exception as e:
-                        print(f"⚠️ Could not get LLM adapter info: {e}")
-
-                print(f"\n✅ QA Chain optimization test completed successfully!")
-
-            except Exception as e:
-                print(f"❌ QA Chain optimization failed: {e}")
-                print(f"🔄 Error details:")
-                import traceback
-
-                traceback.print_exc()
-
-        else:
-            print(f"\n❌ QA Chain not ready for testing")
-            print(f"   Status: {validation.get('status')}")
-            print(f"   Reason: {validation.get('reason', 'Unknown')}")
-
-            if validation.get("recommendations"):
-                print(f"   Please address these issues:")
-                for rec in validation["recommendations"]:
-                    print(f"      • {rec}")
-
-            return
-
-        # 9. 최종 상태
-        final_status = pipeline.get_system_status()
-        print(f"\n📈 Final System State:")
         print(
-            f"   Total queries processed: {final_status['pipeline_state']['total_queries_processed']}"
+            f"   Unified graph: {'✅' if retriever_status['unified_graph_exists'] else '❌'}"
+        )
+        print(
+            f"   Vector store: {'✅' if retriever_status['vector_store_exists'] else '❌'}"
+        )
+        print(f"   API key: {'✅' if retriever_status['api_key_set'] else '❌'}")
+        print(
+            f"   Retriever ready: {'✅' if retriever_status['retriever_ready'] else '❌'}"
+        )
+        print(
+            f"   Overall ready: {'✅' if retriever_status['overall_ready'] else '❌'}"
         )
 
-        # QA Chain 최종 상태
-        if "qa_chain" in final_status:
-            qa_final = final_status["qa_chain"]
-            print(f"   QA Chain enabled: {qa_final['enabled']}")
-            if qa_final["enabled"] and qa_final["stats"]:
-                print(
-                    f"   QA Chain total calls: {qa_final['stats'].get('total_calls', 0)}"
-                )
+        if retriever_status["errors"]:
+            print(f"\n⚠️ Issues found:")
+            for error in retriever_status["errors"]:
+                print(f"   • {error}")
 
-        # 사용 가이드
-        print(f"\n💡 QA Chain is now active! Usage:")
-        print(f"   • Continue using: pipeline.ask('your question')")
-        print(f"   • Check stats: pipeline.get_qa_chain_stats()")
-        print(f"   • Disable if needed: pipeline.disable_qa_chain_optimization()")
+        # 2. API 키 확인 및 설정 안내
+        if not retriever_status["api_key_set"]:
+            print(f"\n🔑 HuggingFace API Key Setup:")
+            print(f"   export HUGGINGFACE_API_KEY='your_token_here'")
+            print(f"   또는 .env 파일에 HUGGINGFACE_API_KEY=your_token_here")
+
+            # 사용자 입력으로 임시 설정 (선택사항)
+            try:
+                user_token = input(
+                    "\n임시로 API 키를 입력하시겠습니까? (Enter to skip): "
+                ).strip()
+                if user_token:
+                    os.environ["HUGGINGFACE_API_KEY"] = user_token
+                    print("✅ API key temporarily set")
+                    retriever_status["api_key_set"] = True
+            except (EOFError, KeyboardInterrupt):
+                print("\n⏭️ Skipping API key input")
+
+        # 3. 테스트 실행
+        if retriever_status["api_key_set"]:
+            print(f"\n🚀 Starting quick_ask tests...")
+            print("=" * 60)
+
+            test_queries = [
+                "What machine learning techniques are used for battery SoC prediction?",
+                "What are the main tasks where AI and machine learning techniques are applied?",
+                "What are the areas where AI can be applied in battery electrode processes?",
+            ]
+
+            quick_ask_results = []
+
+            for i, query in enumerate(test_queries[:2]):  # 2개 질문 테스트
+                print(f"\n🔥 Test {i+1}: {query}")
+                print("-" * 50)
+
+                # quick_ask_with_retriever 테스트
+                quick_result = quick_ask_with_retriever(
+                    query, use_context=retriever_status["overall_ready"], max_docs=10
+                )
+                quick_ask_results.append(quick_result)
+
+                if quick_result["success"]:
+                    print(f"✅ Success in {quick_result['response_time']:.2f}s")
+                    print(f"📝 Answer: {quick_result['answer'][:200]}...")
+                    print(
+                        f"🔍 Context: {'Used' if quick_result['context_used'] else 'Not used'} ({quick_result['context_length']} chars)"
+                    )
+                    print(f"📄 Documents: {quick_result['documents_found']}")
+                    print(f"⚡ API time: {quick_result['api_time']:.2f}s")
+                    print(f"🔍 Retrieval time: {quick_result['context_time']:.2f}s")
+                    print(f"🎯 Confidence: {quick_result['confidence_score']:.3f}")
+                else:
+                    print(f"❌ Failed: {quick_result.get('error', 'Unknown error')}")
+
+                # 캐시 효과 테스트 (첫 번째 질문에서)
+                if i == 0 and quick_result["success"]:
+                    print(f"\n🔄 Testing response consistency...")
+                    cache_start = time.time()
+                    cache_result = quick_ask_with_retriever(
+                        query, use_context=retriever_status["overall_ready"]
+                    )
+                    cache_time = time.time() - cache_start
+
+                    print(f"📊 Second call time: {cache_time:.2f}s")
+
+                    # 응답 일관성 확인
+                    first_answer = quick_result["answer"][:100]
+                    second_answer = (
+                        cache_result["answer"][:100] if cache_result["success"] else ""
+                    )
+
+                    if first_answer == second_answer:
+                        print(f"✅ Consistent response")
+                    else:
+                        print(f"⚠️ Different response (normal for generative AI)")
+
+            # 4. 성능 요약
+            if quick_ask_results:
+                successful_results = [r for r in quick_ask_results if r["success"]]
+
+                if successful_results:
+                    print(f"\n📊 Performance Summary:")
+                    print("=" * 40)
+
+                    avg_total_time = sum(
+                        r["response_time"] for r in successful_results
+                    ) / len(successful_results)
+                    avg_api_time = sum(r["api_time"] for r in successful_results) / len(
+                        successful_results
+                    )
+                    avg_context_time = sum(
+                        r["context_time"] for r in successful_results
+                    ) / len(successful_results)
+
+                    context_success_rate = sum(
+                        1 for r in successful_results if r["context_used"]
+                    ) / len(successful_results)
+                    retrieval_success_rate = sum(
+                        1 for r in successful_results if r["retrieval_success"]
+                    ) / len(successful_results)
+
+                    print(
+                        f"✅ Success rate: {len(successful_results)}/{len(quick_ask_results)} ({len(successful_results)/len(quick_ask_results)*100:.1f}%)"
+                    )
+                    print(f"⚡ Average total time: {avg_total_time:.2f}s")
+                    print(f"🤖 Average API time: {avg_api_time:.2f}s")
+                    print(f"🔍 Average retrieval time: {avg_context_time:.2f}s")
+                    print(f"📄 Context usage rate: {context_success_rate*100:.1f}%")
+                    print(
+                        f"🎯 Retrieval success rate: {retrieval_success_rate*100:.1f}%"
+                    )
+
+                    # 성능 분석
+                    print(f"\n🔍 Performance Analysis:")
+                    if avg_total_time < 5:
+                        print(f"   🚀 Excellent: Under 5 seconds total")
+                    elif avg_total_time < 10:
+                        print(f"   ✅ Good: Under 10 seconds total")
+                    else:
+                        print(f"   ⚠️ Slow: Over 10 seconds total")
+
+                    if retrieval_success_rate > 0.8:
+                        print(f"   📄 GraphRAG retrieval working well")
+                    elif retrieval_success_rate > 0:
+                        print(f"   ⚠️ GraphRAG retrieval partially working")
+                    else:
+                        print(f"   ❌ GraphRAG retrieval not working")
+
+                else:
+                    print(f"\n❌ All tests failed")
+                    for result in quick_ask_results:
+                        if not result["success"]:
+                            print(f"   Error: {result.get('error', 'Unknown')}")
+        else:
+            print(f"\n⚠️ Cannot run tests without API key")
+
+        # 5. 최종 권장사항
+        print(f"\n💡 Recommendations:")
+        print("=" * 30)
+
+        if retriever_status["overall_ready"]:
+            print(f"   ✅ System is fully operational")
+            print(f"   ✅ Use: quick_ask_with_retriever(query, use_context=True)")
+        else:
+            print(f"   ⚠️ GraphRAG components missing - using API-only mode")
+            print(f"   ✅ Use: quick_ask_with_retriever(query, use_context=False)")
+
+        if not retriever_status["api_key_set"]:
+            print(f"   🔑 Set HUGGINGFACE_API_KEY environment variable")
+
+        print(f"\n🎯 Usage Examples:")
+        print(f"   # With GraphRAG context")
+        print(
+            f"   result = quick_ask_with_retriever('your question', use_context=True)"
+        )
+        print(f"   ")
+        print(f"   # API only")
+        print(
+            f"   result = quick_ask_with_retriever('your question', use_context=False)"
+        )
+        print(f"   ")
+        print(f"   print(result['answer'])")
 
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
 
         traceback.print_exc()
+
+        print(f"\n🔧 Troubleshooting:")
+        print(f"   1. Check HUGGINGFACE_API_KEY environment variable")
+        print(f"   2. Verify GraphRAG data files exist")
+        print(f"   3. Check network connection")
+        print(
+            f"   4. Try API-only mode: quick_ask_with_retriever(query, use_context=False)"
+        )
+
+
+def quick_test():
+    """빠른 기능 테스트"""
+    print("🧪 Quick functionality test...")
+
+    # 시스템 상태 확인
+    status = check_retriever_status()
+    print(f"System ready: {'✅' if status['overall_ready'] else '❌'}")
+
+    if status["api_key_set"]:
+        # 간단한 테스트
+        result = quick_ask_with_retriever(
+            "What is battery management system?", use_context=status["overall_ready"]
+        )
+
+        if result["success"]:
+            print(f"✅ Test successful ({result['response_time']:.2f}s)")
+            print(f"Context used: {result['context_used']}")
+        else:
+            print(f"❌ Test failed: {result.get('error', 'Unknown')}")
+    else:
+        print("❌ API key not set")
+
+
+if __name__ == "__main__":
+    # 사용자 선택
+    print("🎯 GraphRAG + HuggingFace API Test")
+    print("1. Full test")
+    print("2. Quick test")
+    print("3. Check status only")
+
+    try:
+        choice = input("Select (1-3): ").strip()
+
+        if choice == "1":
+            main()
+        elif choice == "2":
+            quick_test()
+        elif choice == "3":
+            status = check_retriever_status()
+            print(f"Status: {status}")
+        else:
+            main()  # 기본값
+
+    except (EOFError, KeyboardInterrupt):
+        main()  # 기본값
+
+# def main():
+#     """GraphRAG Pipeline 테스트 - QA Chain 최적화 전용"""
+#     print("🧪 Testing GraphRAG Pipeline with QA Chain optimization...")
+
+#     try:
+#         # 1. 파이프라인 초기화
+#         pipeline = GraphRAGPipeline(config_file="graphrag_config.yaml", auto_setup=True)
+
+#         # 2. 시스템 상태 확인
+#         status = pipeline.get_system_status()
+#         print(f"📊 System Status:")
+#         print(f"   Pipeline: {status['pipeline_state']['status']}")
+
+#         # QA Chain 상태 확인
+#         if "qa_chain" in status:
+#             qa_status = status["qa_chain"]
+#             print(f"   QA Chain Available: {qa_status['available']}")
+#             print(f"   QA Chain Ready: {qa_status['ready']}")
+#             print(f"   QA Chain Enabled: {qa_status['enabled']}")
+
+#         # 3. 임베딩 구축 (필요한 경우)
+#         if not status["embeddings_loaded"]:
+#             print(f"\n🏗️ Building embeddings...")
+#             build_result = pipeline.build_embeddings()
+#             print(f"✅ Built {build_result['total_embeddings']} embeddings")
+
+#         # 4. QA Chain 준비 상태 검증
+#         print(f"\n🔍 Validating QA Chain integration...")
+#         validation = pipeline.validate_qa_chain_integration()
+#         print(f"   Status: {validation.get('status', 'unknown')}")
+
+#         if validation.get("recommendations"):
+#             print(f"   Recommendations:")
+#             for rec in validation["recommendations"][:3]:
+#                 print(f"      • {rec}")
+
+#         # 5. QA Chain 활성화 (바로 시작)
+#         if validation.get("status") == "ready":
+#             print(f"\n🚀 Activating QA Chain optimization...")
+
+#             try:
+#                 pipeline.enable_qa_chain_optimization()
+#                 print(f"✅ QA Chain optimization activated!")
+
+#                 # 6. 테스트 질문들
+#                 test_queries = [
+#                     "What machine learning techniques are used for battery SoC prediction?",
+#                     "What are the main tasks where AI and machine learning techniques are applied?"
+#                     "What are the areas where AI can be applied in battery electrode processes?,",
+#                 ]
+
+#                 print(f"\n❓ Testing with QA CHAIN optimization...")
+
+#                 for i, query in enumerate(test_queries[:2]):  # 2개 질문 테스트
+#                     print(f"\n{i+1}. {query}")
+
+#                     start_time = time.time()
+#                     result = pipeline.ask(query, return_context=True)
+#                     response_time = time.time() - start_time
+
+#                     print(f"✅ Answer: {result.answer[:300]}...")
+#                     print(f"📊 Response time: {response_time:.2f}s")
+#                     print(f"📊 Confidence: {result.confidence_score:.3f}")
+#                     print(f"📄 Sources: {len(result.source_nodes)} nodes")
+
+#                     # 첫 번째 질문 후 캐시 효과 확인
+#                     if i == 0:
+#                         print(f"\n🔄 Testing cache effect - same question again...")
+#                         cache_start = time.time()
+#                         cache_result = pipeline.ask(query, return_context=True)
+#                         cache_time = time.time() - cache_start
+
+#                         speedup = (
+#                             response_time / cache_time
+#                             if cache_time > 0
+#                             else float("inf")
+#                         )
+#                         print(f"📊 Cache response time: {cache_time:.2f}s")
+#                         print(f"🚀 Speedup: {speedup:.1f}x faster")
+
+#                 # 7. QA Chain 통계
+#                 qa_stats = pipeline.get_qa_chain_stats()
+#                 if qa_stats:
+#                     print(f"\n📊 QA Chain Statistics:")
+#                     print(f"   Total calls: {qa_stats.get('total_calls', 0)}")
+#                     print(f"   Cache hits: {qa_stats.get('cache_hits', 0)}")
+#                     print(
+#                         f"   Cache hit ratio: {qa_stats.get('cache_hit_ratio', 0):.2%}"
+#                     )
+#                     print(
+#                         f"   Average response time: {qa_stats.get('average_time', 0):.2f}s"
+#                     )
+#                     print(f"   Success rate: {qa_stats.get('success_rate', 0):.2%}")
+#                     print(f"   Failed calls: {qa_stats.get('failed_calls', 0)}")
+
+#                 # 8. LLM 어댑터 상태 확인
+#                 if hasattr(pipeline, "_qa_chain") and pipeline._qa_chain:
+#                     try:
+#                         llm_info = pipeline._qa_chain._llm.get_model_info()
+#                         print(f"\n🤖 LLM Adapter Info:")
+#                         print(f"   Model path: {llm_info.get('model_path', 'unknown')}")
+#                         print(f"   Adapter mode: {llm_info.get('mode', 'unknown')}")
+#                         print(
+#                             f"   Temperature: {llm_info.get('temperature', 'unknown')}"
+#                         )
+#                         print(f"   Max tokens: {llm_info.get('max_tokens', 'unknown')}")
+#                         print(
+#                             f"   Caching enabled: {llm_info.get('caching_enabled', 'unknown')}"
+#                         )
+#                     except Exception as e:
+#                         print(f"⚠️ Could not get LLM adapter info: {e}")
+
+#                 print(f"\n✅ QA Chain optimization test completed successfully!")
+
+#             except Exception as e:
+#                 print(f"❌ QA Chain optimization failed: {e}")
+#                 print(f"🔄 Error details:")
+#                 import traceback
+
+#                 traceback.print_exc()
+
+#         else:
+#             print(f"\n❌ QA Chain not ready for testing")
+#             print(f"   Status: {validation.get('status')}")
+#             print(f"   Reason: {validation.get('reason', 'Unknown')}")
+
+#             if validation.get("recommendations"):
+#                 print(f"   Please address these issues:")
+#                 for rec in validation["recommendations"]:
+#                     print(f"      • {rec}")
+
+#             return
+
+#         # 9. 최종 상태
+#         final_status = pipeline.get_system_status()
+#         print(f"\n📈 Final System State:")
+#         print(
+#             f"   Total queries processed: {final_status['pipeline_state']['total_queries_processed']}"
+#         )
+
+#         # QA Chain 최종 상태
+#         if "qa_chain" in final_status:
+#             qa_final = final_status["qa_chain"]
+#             print(f"   QA Chain enabled: {qa_final['enabled']}")
+#             if qa_final["enabled"] and qa_final["stats"]:
+#                 print(
+#                     f"   QA Chain total calls: {qa_final['stats'].get('total_calls', 0)}"
+#                 )
+
+#         # 사용 가이드
+#         print(f"\n💡 QA Chain is now active! Usage:")
+#         print(f"   • Continue using: pipeline.ask('your question')")
+#         print(f"   • Check stats: pipeline.get_qa_chain_stats()")
+#         print(f"   • Disable if needed: pipeline.disable_qa_chain_optimization()")
+
+#     except Exception as e:
+#         print(f"❌ Test failed: {e}")
+#         import traceback
+
+#         traceback.print_exc()
 
 
 # def main():
