@@ -278,21 +278,68 @@ class GraphRAGLLMAdapter(LLM):
                 raise
 
     def _call_direct(self, prompt: str, **kwargs) -> str:
-        """직접 LLM 호출"""
+        """직접 LLM 호출 - 완전히 안전한 파라미터 처리"""
         try:
+            # ✅ FieldInfo 객체 사용 완전 방지
+            safe_max_length = 500  # 고정값 사용
+
+            # kwargs에서 안전하게 추출
+            if "max_length" in kwargs and isinstance(
+                kwargs["max_length"], (int, float)
+            ):
+                safe_max_length = int(kwargs["max_length"])
+
+            logger.debug(f"🔧 Using safe max_length: {safe_max_length}")
+
+            # ✅ 프롬프트 전처리 추가
+            processed_prompt = self._enhance_prompt_quality(prompt)
+
+            # LocalLLMManager.generate() 호출 - 파라미터 최소화
             response = self.llm_manager.generate(
-                prompt=prompt, max_length=kwargs.get("max_length", self.max_tokens)
+                prompt=processed_prompt, max_length=safe_max_length
             )
 
             if not isinstance(response, str):
                 logger.warning(f"⚠️ LLM returned non-string: {type(response)}")
                 response = str(response)
 
-            return response
+            # ✅ 응답 품질 개선
+            enhanced_response = self._enhance_response_quality(response)
+            return enhanced_response
 
         except Exception as e:
             logger.error(f"❌ Direct LLM call failed: {e}")
-            raise
+
+            # 구체적인 에러 처리
+            if "unexpected keyword argument" in str(e):
+                raise RuntimeError(f"파라미터 전달 오류 (FieldInfo 관련): {e}")
+            else:
+                raise
+
+    # 🆕 프롬프트 전처리 메서드 추가
+    def _preprocess_prompt(self, prompt: str) -> str:
+        """프롬프트 전처리 - 더 나은 응답을 위한 구조화"""
+
+        # 기본 정리
+        prompt = prompt.strip()
+
+        # 🆕 시스템 프롬프트 추가 (한국어 응답 개선)
+        if not prompt.startswith("<|system|>") and len(prompt) > 20:
+            system_prompt = """당신은 배터리 및 에너지 저장 시스템 전문가입니다. 
+    주어진 정보를 바탕으로 정확하고 유용한 답변을 한국어로 제공해주세요.
+    답변은 명확하고 구체적이어야 하며, 기술적 내용은 이해하기 쉽게 설명해주세요."""
+
+            structured_prompt = f"""<|system|>
+    {system_prompt}
+
+    <|user|>
+    {prompt}
+
+    <|assistant|>
+    """
+            return structured_prompt
+
+        return prompt
 
     def _call_batched(self, prompts: List[str], **kwargs) -> List[str]:
         """배치 LLM 호출"""
@@ -322,7 +369,7 @@ class GraphRAGLLMAdapter(LLM):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> str:
-        """재시도 로직"""
+        """재시도 로직 - FieldInfo 오류 완전 해결"""
 
         last_error = None
 
@@ -330,87 +377,236 @@ class GraphRAGLLMAdapter(LLM):
             try:
                 logger.info(f"🔄 Retry attempt {attempt + 1}/{self.max_retries}")
 
-                # 재시도 지연
+                # ✅ FieldInfo 오류 방지 - 안전한 값 추출
                 if attempt > 0:
-                    time.sleep(self.retry_delay * attempt)
+                    # 기본 지연만 사용 (FieldInfo 연산 제거)
+                    base_delay = 1.0  # self.retry_delay 직접 사용 안함
+                    delay = base_delay * (2 ** (attempt - 1))
+                    time.sleep(min(delay, 10.0))
 
-                # 간단한 직접 호출로 재시도
-                response = self._call_direct(prompt, max_length=self.max_tokens)
+                # ✅ 재시도 시 안전한 파라미터만 사용
+                retry_kwargs = {
+                    "max_length": 500,  # 고정값 사용 (FieldInfo 연산 방지)
+                }
 
-                logger.info(f"✅ Retry successful on attempt {attempt + 1}")
-                return response
+                # FieldInfo 객체와의 연산을 완전히 피함
+                logger.debug(f"🔧 Retry {attempt + 1} with safe params: {retry_kwargs}")
+
+                response = self._call_direct(prompt, **retry_kwargs)
+
+                # ✅ 응답 품질 검증
+                if (
+                    response
+                    and len(response.strip()) > 10
+                    and not self._is_meaningless_response(response)
+                ):
+                    logger.info(f"✅ Retry successful on attempt {attempt + 1}")
+                    return response
+                else:
+                    logger.warning(
+                        f"⚠️ Retry {attempt + 1} produced poor quality response"
+                    )
+                    continue
 
             except Exception as e:
                 last_error = e
                 logger.warning(f"⚠️ Retry attempt {attempt + 1} failed: {e}")
 
-        # 모든 재시도 실패 시 폴백 응답
+        # 모든 재시도 실패 시 개선된 폴백 응답
         logger.error(f"❌ All retry attempts failed. Last error: {last_error}")
         return self._generate_fallback_response(prompt, str(last_error))
 
     def _generate_fallback_response(self, prompt: str, error_msg: str) -> str:
-        """폴백 응답 생성"""
-        return (
-            f"죄송합니다. 현재 응답을 생성할 수 없습니다.\n"
-            f"오류: {error_msg}\n\n"
-            f"잠시 후 다시 시도해주세요."
-        )
+        """개선된 폴백 응답 생성"""
+        # ✅ 에러 타입별 맞춤 메시지
+        if "FieldInfo" in error_msg:
+            return (
+                "죄송합니다. 시스템 설정에 일시적인 문제가 있어 응답을 생성할 수 없습니다.\n"
+                "잠시 후 다시 시도해주시거나, 질문을 더 간단하게 바꿔서 시도해보세요."
+            )
+        elif "memory" in error_msg.lower():
+            return (
+                "죄송합니다. 현재 시스템 리소스가 부족하여 응답을 생성할 수 없습니다.\n"
+                "질문을 더 구체적이고 간단하게 바꿔서 다시 시도해주세요."
+            )
+        elif "timeout" in error_msg.lower():
+            return (
+                "죄송합니다. 응답 생성 시간이 초과되었습니다.\n"
+                "질문을 더 구체적으로 바꿔서 다시 시도해주세요."
+            )
+        else:
+            return (
+                "죄송합니다. 현재 응답을 생성할 수 없습니다.\n"
+                "잠시 후 다시 시도해주시거나, 질문을 다시 표현해 주세요."
+            )
 
     def _prepare_generation_kwargs(
         self, stop: Optional[List[str]], **kwargs
     ) -> Dict[str, Any]:
-        """생성 파라미터 준비 - FieldInfo 오류 수정"""
+        """생성 파라미터 준비 - FieldInfo 완전 제거"""
 
-        # ✅ Pydantic Field 값을 안전하게 추출
-        max_tokens_value = getattr(self, "max_tokens", 1000)
-        temperature_value = getattr(self, "temperature", 0.1)
+        # ✅ FieldInfo 객체 사용 완전 방지 - 고정값 사용
+        safe_max_tokens = 500  # 기본값 고정
 
-        # FieldInfo 객체인 경우 기본값 사용
-        if not isinstance(max_tokens_value, (int, float)):
-            max_tokens_value = 1000
-            logger.warning("⚠️ max_tokens is not a numeric value, using default 1000")
+        # kwargs에서 안전하게 추출
+        if "max_tokens" in kwargs and isinstance(kwargs["max_tokens"], (int, float)):
+            safe_max_tokens = int(kwargs["max_tokens"])
+        elif "max_length" in kwargs and isinstance(kwargs["max_length"], (int, float)):
+            safe_max_tokens = int(kwargs["max_length"])
 
-        if not isinstance(temperature_value, (int, float)):
-            temperature_value = 0.1
-            logger.warning("⚠️ temperature is not a numeric value, using default 0.1")
-
+        # ✅ LocalLLMManager가 실제로 받는 파라미터만
         generation_kwargs = {
-            "max_length": kwargs.get("max_tokens", max_tokens_value),
-            "temperature": kwargs.get("temperature", temperature_value),
+            "max_length": safe_max_tokens,
+            # ❌ temperature, top_p 등은 완전 제거 (transformers 경고 제거)
         }
 
-        # stop 토큰은 현재 LocalLLMManager에서 지원하지 않음
-        if stop:
-            logger.debug(f"⚠️ Stop tokens not supported: {stop}")
+        logger.debug(f"🔧 Safe generation kwargs: {generation_kwargs}")
 
-        logger.debug(f"🔧 Generation kwargs: {generation_kwargs}")
+        # stop 토큰 경고
+        if stop:
+            logger.debug(f"⚠️ Stop tokens not supported by LocalLLMManager: {stop}")
+
         return generation_kwargs
 
-    def _post_process_response(self, response: str) -> str:
-        """응답 후처리"""
+    def _enhance_prompt_quality(self, prompt: str) -> str:
+        """프롬프트 품질 개선"""
+
+        # 기본 정리
+        prompt = prompt.strip()
+
+        # ✅ 한국어 답변을 위한 명확한 지시 추가
+        if not prompt.startswith("<|system|>") and len(prompt) > 20:
+            enhanced_prompt = f"""다음 질문에 대해 정확하고 유용한 한국어 답변을 제공해주세요. 
+    기술적 내용은 이해하기 쉽게 설명하고, 구체적인 예시를 포함해주세요.
+
+    질문: {prompt}
+
+    답변:"""
+            return enhanced_prompt
+
+        return prompt
+
+    def _enhance_response_quality(self, response: str) -> str:
+        """응답 품질 개선"""
+
         if not isinstance(response, str):
             response = str(response)
 
         # 기본 정리
         response = response.strip()
 
+        # ✅ 반복 문자 제거 (기존 문제 해결)
+        import re
+
+        # 같은 문자가 3번 이상 반복되면 제거
+        response = re.sub(r"(.)\1{3,}", r"\1", response)
+
+        # 같은 단어가 2번 이상 반복되면 제거
+        response = re.sub(r"\b(\w+)(\s+\1)+\b", r"\1", response)
+
+        # 의미없는 기호 반복 제거
+        response = re.sub(r"[!]{3,}", "!", response)
+        response = re.sub(r"[?]{3,}", "?", response)
+        response = re.sub(r"[.]{3,}", "...", response)
+
+        # ✅ 빈 응답이나 너무 짧은 응답 처리
+        if not response or len(response.strip()) < 15:
+            return "죄송합니다. 해당 질문에 대한 구체적인 정보를 찾을 수 없었습니다. 질문을 더 구체적으로 표현해 주시겠어요?"
+
+        # 길이 제한 (너무 긴 응답 방지)
+        if len(response) > 1500:
+            response = response[:1500] + "..."
+
+        return response
+
+    def _post_process_response(self, response: str) -> str:
+        """응답 후처리 - 품질 검증 강화"""
+        if not isinstance(response, str):
+            response = str(response)
+
+        # 기본 정리
+        response = response.strip()
+
+        # 🆕 반복 문자 제거 (기존 문제 해결)
+        import re
+
+        # 같은 문자가 5번 이상 반복되면 제거
+        response = re.sub(r"(.)\1{5,}", r"\1", response)
+
+        # 같은 단어가 3번 이상 반복되면 제거
+        response = re.sub(r"\b(\w+)(\s+\1){2,}\b", r"\1", response)
+
+        # 🆕 의미없는 응답 감지 및 처리
+        if self._is_meaningless_response(response):
+            logger.warning("⚠️ Detected meaningless response, generating fallback")
+            response = "죄송합니다. 적절한 답변을 생성할 수 없었습니다. 질문을 다시 표현해 주시겠어요?"
+
         # 빈 응답 처리
-        if not response:
+        if not response or len(response.strip()) < 5:
             response = "죄송합니다. 응답을 생성할 수 없었습니다."
 
         # 길이 제한
-        max_chars = self.max_tokens * 4  # 대략적 추정
+        max_chars = self._get_safe_max_tokens() * 4
         if len(response) > max_chars:
             response = response[:max_chars] + "..."
             logger.debug(f"📏 Response truncated to {max_chars} characters")
 
         return response
 
+    def _is_meaningless_response(self, response: str) -> bool:
+        """의미없는 응답 감지 - 개선된 버전"""
+        if not response or len(response.strip()) < 15:
+            return True
+
+        # ✅ 반복 문자 패턴 감지
+        import re
+
+        # 같은 문자가 50% 이상을 차지하는 경우
+        char_counts = {}
+        for char in response.replace(" ", ""):  # 공백 제외
+            if char.isalnum():  # 알파벳과 숫자만
+                char_counts[char] = char_counts.get(char, 0) + 1
+
+        if char_counts:
+            max_char_count = max(char_counts.values())
+            total_chars = sum(char_counts.values())
+            if max_char_count > total_chars * 0.5:
+                return True
+
+        # ✅ 의미있는 단어 수 확인
+        words = re.findall(r"\w+", response)
+        korean_words = re.findall(r"[가-힣]+", response)
+        english_words = re.findall(r"[a-zA-Z]+", response)
+
+        # 의미있는 단어가 너무 적은 경우
+        if len(words) < 5 and len(korean_words) < 2 and len(english_words) < 3:
+            return True
+
+        # ✅ 특정 무의미 패턴 감지
+        meaningless_patterns = [
+            r'^[!@#$%^&*()_+\-=\[\]{};:"\\|,.<>\/?]+$',  # 특수문자만
+            r"^[0-9\s]+$",  # 숫자와 공백만
+            r"^(.)\1{10,}",  # 같은 문자 10번 이상 반복
+        ]
+
+        for pattern in meaningless_patterns:
+            if re.search(pattern, response.strip()):
+                return True
+
+        return False
+
     def _get_cache_key(self, prompt: str) -> str:
-        """캐시 키 생성"""
+        """캐시 키 생성 - FieldInfo 사용 방지"""
         import hashlib
 
-        key_data = f"{prompt}_{self.temperature}_{self.max_tokens}"
+        # ✅ FieldInfo 객체 사용 방지 - 고정값 사용
+        safe_temp = 0.1
+        safe_max_tokens = 500
+
+        # 전처리된 프롬프트로 키 생성
+        processed_prompt = self._enhance_prompt_quality(prompt)
+
+        key_data = f"{processed_prompt}_{safe_temp}_{safe_max_tokens}"
         return hashlib.md5(key_data.encode()).hexdigest()
 
     def _get_from_cache(self, prompt: str) -> Optional[str]:
@@ -435,8 +631,18 @@ class GraphRAGLLMAdapter(LLM):
         return None
 
     def _save_to_cache(self, prompt: str, response: str) -> None:
-        """캐시에 응답 저장"""
+        """캐시에 응답 저장 - 품질 검증 추가"""
         if not self.enable_caching:
+            return
+
+        # ✅ 의미없는 응답은 캐시하지 않음
+        if self._is_meaningless_response(response):
+            logger.debug("🚫 Not caching meaningless response")
+            return
+
+        # ✅ 폴백 응답도 캐시하지 않음
+        if "죄송합니다" in response and "오류" in response:
+            logger.debug("🚫 Not caching error response")
             return
 
         cache_key = self._get_cache_key(prompt)
@@ -444,12 +650,17 @@ class GraphRAGLLMAdapter(LLM):
         self._cache[cache_key] = response
         self._cache_timestamps[cache_key] = time.time()
 
-        # 캐시 크기 제한
-        if len(self._cache) > 100:
-            # 가장 오래된 캐시 제거
-            oldest_key = min(self._cache_timestamps, key=self._cache_timestamps.get)
-            del self._cache[oldest_key]
-            del self._cache_timestamps[oldest_key]
+        # 캐시 크기 관리
+        if len(self._cache) > 50:  # 더 작은 캐시 크기로 관리
+            # 가장 오래된 캐시 10개 제거
+            sorted_items = sorted(self._cache_timestamps.items(), key=lambda x: x[1])
+            for key, _ in sorted_items[:10]:
+                if key in self._cache:
+                    del self._cache[key]
+                if key in self._cache_timestamps:
+                    del self._cache_timestamps[key]
+
+            logger.debug(f"🗑️ Cache cleaned, now {len(self._cache)} items")
 
     # ========================================================================
     # 비동기 메서드들 (LangChain 호환성)
@@ -520,7 +731,17 @@ class GraphRAGLLMAdapter(LLM):
     # ========================================================================
 
     def get_usage_stats(self) -> Dict[str, Any]:
-        """사용 통계 반환"""
+        """사용 통계 반환 - 더 상세한 정보"""
+
+        cache_efficiency = (
+            self._stats.cache_hits / max(1, self._stats.total_calls)
+        ) * 100
+
+        success_rate = (
+            (self._stats.total_calls - self._stats.failed_calls)
+            / max(1, self._stats.total_calls)
+        ) * 100
+
         return {
             "total_calls": self._stats.total_calls,
             "total_tokens": self._stats.total_tokens,
@@ -528,12 +749,17 @@ class GraphRAGLLMAdapter(LLM):
             "average_time": round(self._stats.average_time, 2),
             "cache_hits": self._stats.cache_hits,
             "failed_calls": self._stats.failed_calls,
-            "cache_hit_ratio": (
-                self._stats.cache_hits / max(1, self._stats.total_calls)
+            "cache_efficiency": f"{cache_efficiency:.1f}%",
+            "success_rate": f"{success_rate:.1f}%",
+            # 🆕 추가 메트릭
+            "cache_size": len(self._cache),
+            "avg_tokens_per_call": (
+                self._stats.total_tokens / max(1, self._stats.total_calls)
             ),
-            "success_rate": (
-                (self._stats.total_calls - self._stats.failed_calls)
-                / max(1, self._stats.total_calls)
+            "calls_per_minute": (
+                (self._stats.total_calls / max(1, self._stats.total_time / 60))
+                if self._stats.total_time > 0
+                else 0
             ),
         }
 
@@ -572,28 +798,103 @@ class GraphRAGLLMAdapter(LLM):
         }
 
     def health_check(self) -> Dict[str, Any]:
-        """어댑터 상태 확인"""
+        """개선된 헬스체크"""
         try:
-            # 간단한 테스트 호출
-            test_response = self._call("Test", max_tokens=10)
-            is_healthy = len(test_response) > 0
+            start_time = time.time()
+
+            # ✅ 간단하고 안전한 테스트
+            test_response = self._call_direct("테스트", max_length=50)
+
+            response_time = time.time() - start_time
+            is_healthy = (
+                test_response
+                and len(test_response.strip()) > 5
+                and not self._is_meaningless_response(test_response)
+                and response_time < 60.0  # 1분 이내
+            )
 
             return {
-                "status": "healthy" if is_healthy else "unhealthy",
-                "model_loaded": self._is_loaded,
-                "llm_manager_available": self.llm_manager is not None,
-                "test_response_length": len(test_response),
-                "last_check": time.time(),
+                "status": "healthy" if is_healthy else "degraded",
+                "response_time": round(response_time, 2),
+                "test_response_quality": (
+                    "good"
+                    if not self._is_meaningless_response(test_response)
+                    else "poor"
+                ),
+                "cache_size": len(self._cache),
+                "total_calls": self._stats.total_calls,
+                "success_rate": f"{((self._stats.total_calls - self._stats.failed_calls) / max(1, self._stats.total_calls)) * 100:.1f}%",
+                "recommendations": self._get_performance_recommendations(
+                    is_healthy, response_time
+                ),
             }
 
         except Exception as e:
             return {
                 "status": "unhealthy",
                 "error": str(e),
-                "model_loaded": self._is_loaded,
-                "llm_manager_available": self.llm_manager is not None,
-                "last_check": time.time(),
+                "recommendations": ["시스템을 재시작하거나 설정을 확인해주세요."],
             }
+
+    def _get_health_recommendations(
+        self, is_healthy: bool, response_time: float
+    ) -> List[str]:
+        """헬스체크 기반 권장사항"""
+        recommendations = []
+
+        if not is_healthy:
+            recommendations.append(
+                "모델 응답 품질에 문제가 있습니다. 모델을 다시 로드해보세요."
+            )
+
+        if response_time > 20:
+            recommendations.append(
+                "응답 시간이 느립니다. GPU 메모리나 모델 크기를 확인해보세요."
+            )
+
+        if len(self._cache) == 0:
+            recommendations.append(
+                "캐시가 비어있습니다. 자주 사용하는 쿼리로 캐시를 워밍업하세요."
+            )
+
+        cache_hit_rate = self._stats.cache_hits / max(1, self._stats.total_calls)
+        if cache_hit_rate < 0.1:
+            recommendations.append(
+                "캐시 효율이 낮습니다. 캐시 TTL 설정을 확인해보세요."
+            )
+
+        if not recommendations:
+            recommendations.append("시스템이 정상 작동 중입니다.")
+
+        return recommendations
+
+    def optimize_for_performance(self) -> None:
+        """성능 최적화 실행"""
+
+        logger.info("⚡ Optimizing LLM adapter for performance...")
+
+        # 캐시 최적화
+        if len(self._cache) > 30:
+            # 품질이 낮은 캐시 항목 제거
+            poor_quality_keys = []
+            for key, response in self._cache.items():
+                if self._is_meaningless_response(response):
+                    poor_quality_keys.append(key)
+
+            for key in poor_quality_keys:
+                if key in self._cache:
+                    del self._cache[key]
+                if key in self._cache_timestamps:
+                    del self._cache_timestamps[key]
+
+            logger.info(f"🗑️ Removed {len(poor_quality_keys)} poor quality cache items")
+
+        # 통계 리셋 (메모리 절약)
+        if self._stats.total_calls > 100:
+            self._stats = LLMUsageStats()
+            logger.info("📊 Reset statistics for memory optimization")
+
+        logger.info("✅ Performance optimization completed")
 
 
 # ============================================================================
